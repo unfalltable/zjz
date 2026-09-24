@@ -9,7 +9,7 @@ import type {
 
 const seedOrders: OpsOrder[] = [
   {
-    orderNumber: "HW-24091",
+    orderNumber: "MW-24091",
     customerName: "Amara K.",
     destination: "Berlin, DE",
     productName: "Kumo Cloud Cat",
@@ -22,7 +22,7 @@ const seedOrders: OpsOrder[] = [
     updatedAt: "2026-09-24T04:05:00.000Z",
   },
   {
-    orderNumber: "HW-24088",
+    orderNumber: "MW-24088",
     customerName: "Lucas M.",
     destination: "Toronto, CA",
     productName: "Nova Orb",
@@ -35,7 +35,7 @@ const seedOrders: OpsOrder[] = [
     updatedAt: "2026-09-24T03:49:00.000Z",
   },
   {
-    orderNumber: "HW-24084",
+    orderNumber: "MW-24084",
     customerName: "Mei L.",
     destination: "Melbourne, AU",
     productName: "Loop Mini",
@@ -48,7 +48,7 @@ const seedOrders: OpsOrder[] = [
     updatedAt: "2026-09-24T02:55:00.000Z",
   },
   {
-    orderNumber: "HW-24079",
+    orderNumber: "MW-24079",
     customerName: "Theo R.",
     destination: "Paris, FR",
     productName: "Kumo Cloud Cat × 2",

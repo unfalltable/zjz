@@ -7,6 +7,8 @@ import {
   BadgeCheck,
   CreditCard,
   Globe2,
+  Heart,
+  MapPin,
   Minus,
   PackageCheck,
   Plus,
@@ -30,9 +32,20 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  CART_STORAGE_KEY,
+  DESTINATION_STORAGE_KEY,
+  FAVORITES_STORAGE_KEY,
+  destinations,
+  products,
+  type DestinationCode,
+  type StoreCategory,
+  type StoreLocale,
+} from "@/lib/catalog";
 
-type Locale = "en" | "zh" | "es";
-type Category = "all" | "home" | "tech" | "wear";
+type Locale = StoreLocale;
+type Category = StoreCategory;
+type SortOrder = "featured" | "price-low" | "price-high" | "rating";
 
 type WebMCPTool = {
   name: string;
@@ -53,6 +66,11 @@ const copy = {
     announcement: "NEW HERE? TAKE 10% OFF WITH CODE FIRST10",
     delivery: "Free tracked shipping over $75",
     search: "Search products and categories",
+    deliverTo: "Deliver to",
+    sort: "Sort",
+    sortOptions: ["Featured", "Price: low to high", "Price: high to low", "Top rated"],
+    save: "Save for later",
+    saved: "Saved",
     categoryNav: ["Shop all", "Home & living", "Tech", "Bags & accessories"],
     eyebrow: "CURATED IN ASIA · DELIVERED WORLDWIDE",
     title: "Good finds. Fewer borders.",
@@ -95,6 +113,7 @@ const copy = {
     cart: "Your bag",
     cartDesc: "Delivery and estimated duties are calculated before payment.",
     checkout: "Continue to checkout",
+    secureCheckout: "Secure checkout · taxes shown before payment",
     subtotal: "Subtotal",
     empty: "Your bag is empty.",
     productNote: "In stock · dispatches in 2–4 days",
@@ -106,6 +125,11 @@ const copy = {
     announcement: "新客输入 FIRST10，首单立减 10%",
     delivery: "满 $75 全球包邮并全程追踪",
     search: "搜索商品与品类",
+    deliverTo: "配送至",
+    sort: "排序",
+    sortOptions: ["综合推荐", "价格从低到高", "价格从高到低", "评分最高"],
+    save: "收藏商品",
+    saved: "已收藏",
     categoryNav: ["全部商品", "家居生活", "数码科技", "箱包配饰"],
     eyebrow: "亚洲精选 · 全球送达",
     title: "发现好物，跨境不难。",
@@ -148,6 +172,7 @@ const copy = {
     cart: "购物袋",
     cartDesc: "运费与预估税费将在付款前计算。",
     checkout: "继续结账",
+    secureCheckout: "安全结账 · 付款前显示税费",
     subtotal: "小计",
     empty: "购物袋还是空的。",
     productNote: "现货 · 2–4 天内发出",
@@ -159,6 +184,11 @@ const copy = {
     announcement: "10% EN TU PRIMER PEDIDO CON FIRST10",
     delivery: "Envío con seguimiento gratis desde $75",
     search: "Buscar productos y categorías",
+    deliverTo: "Enviar a",
+    sort: "Ordenar",
+    sortOptions: ["Destacados", "Precio: menor a mayor", "Precio: mayor a menor", "Mejor valorados"],
+    save: "Guardar",
+    saved: "Guardado",
     categoryNav: ["Ver todo", "Hogar", "Tecnología", "Bolsos y accesorios"],
     eyebrow: "SELECCIONADO EN ASIA · ENVIADO AL MUNDO",
     title: "Buenos hallazgos. Menos fronteras.",
@@ -201,6 +231,7 @@ const copy = {
     cart: "Tu bolsa",
     cartDesc: "Envío e impuestos estimados se calculan antes del pago.",
     checkout: "Continuar al pago",
+    secureCheckout: "Pago seguro · impuestos antes de pagar",
     subtotal: "Subtotal",
     empty: "Tu bolsa está vacía.",
     productNote: "En stock · sale en 2–4 días",
@@ -209,30 +240,6 @@ const copy = {
     merchant: "Panel de vendedor",
   },
 } as const;
-
-const products = [
-  {
-    id: "kumo", name: "Cloud Cat Figure", price: 89, compareAt: 109, rating: 4.9, reviews: 128,
-    category: "home" as Category, image: "/products/kumo.webp", color: "blue",
-    badge: { en: "Limited", zh: "限量", es: "Limitado" },
-    description: { en: "Soft-touch art object · NFC passport", zh: "亲肤材质艺术摆件 · NFC 证书", es: "Objeto artístico · pasaporte NFC" },
-    detail: { en: "A small-run decorative figure with a soft-touch finish and a scannable authenticity passport.", zh: "小批量制作的艺术摆件，亲肤表面处理，并附带可扫描的真伪证书。", es: "Figura decorativa de serie corta, acabado suave y pasaporte de autenticidad escaneable." },
-  },
-  {
-    id: "nova", name: "Nova Orb Speaker", price: 129, compareAt: null, rating: 4.8, reviews: 94,
-    category: "tech" as Category, image: "/products/nova.webp", color: "ice",
-    badge: { en: "New", zh: "新品", es: "Nuevo" },
-    description: { en: "Spatial audio · 12-hour battery", zh: "空间音效 · 12 小时续航", es: "Audio espacial · 12 horas" },
-    detail: { en: "A compact wireless speaker with room-filling sound, tactile controls and up to 12 hours of play.", zh: "小巧无线音响，空间音效、实体按键，最长可播放 12 小时。", es: "Altavoz inalámbrico compacto, controles táctiles y hasta 12 horas de reproducción." },
-  },
-  {
-    id: "loop", name: "Loop Mini Crossbody", price: 64, compareAt: 79, rating: 4.7, reviews: 211,
-    category: "wear" as Category, image: "/products/loop.webp", color: "coral",
-    badge: { en: "Best seller", zh: "热卖", es: "Más vendido" },
-    description: { en: "Recycled nylon · modular strap", zh: "再生尼龙 · 模块化背带", es: "Nailon reciclado · correa modular" },
-    detail: { en: "A lightweight everyday crossbody made from recycled nylon with an adjustable modular strap.", zh: "轻量日用斜挎包，使用再生尼龙与可调节模块化背带。", es: "Bandolera ligera de nailon reciclado con correa modular ajustable." },
-  },
-] as const;
 
 const categoryOrder: Category[] = ["all", "home", "tech", "wear"];
 const categoryImages = ["/products/kumo.webp", "/products/nova.webp", "/products/loop.webp"];
@@ -244,8 +251,12 @@ const serviceIcons = [ShieldCheck, CreditCard, BadgeCheck, Truck];
 export default function Home() {
   const [locale, setLocale] = useState<Locale>("en");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [category, setCategory] = useState<Category>("all");
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("featured");
+  const [destination, setDestination] = useState<DestinationCode>("US");
+  const [hydrated, setHydrated] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<(typeof products)[number] | null>(null);
   const t = copy[locale];
 
@@ -253,16 +264,23 @@ export default function Home() {
   const cartTotal = useMemo(() => products.reduce((sum, product) => sum + product.price * (cart[product.id] ?? 0), 0), [cart]);
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return products.filter((product) => {
+    const filtered = products.filter((product) => {
       const matchesCategory = category === "all" || product.category === category;
       const matchesSearch = !query || `${product.name} ${product.description[locale]} ${product.detail[locale]}`.toLowerCase().includes(query);
       return matchesCategory && matchesSearch;
     });
-  }, [category, locale, search]);
+    if (sortOrder === "price-low") return [...filtered].sort((a, b) => a.price - b.price);
+    if (sortOrder === "price-high") return [...filtered].sort((a, b) => b.price - a.price);
+    if (sortOrder === "rating") return [...filtered].sort((a, b) => b.rating - a.rating);
+    return filtered;
+  }, [category, locale, search, sortOrder]);
 
   const scrollToProducts = () => document.querySelector("#products")?.scrollIntoView({ behavior: "smooth" });
   const chooseCategory = (value: Category) => { setCategory(value); setSearch(""); scrollToProducts(); };
   const addToBag = (id: string) => { setCart((current) => ({ ...current, [id]: (current[id] ?? 0) + 1 })); toast.success(t.added); };
+  const toggleFavorite = (id: string) => {
+    setFavorites((current) => ({ ...current, [id]: !current[id] }));
+  };
   const changeQuantity = (id: string, amount: number) => {
     setCart((current) => {
       const next = Math.max(0, (current[id] ?? 0) + amount);
@@ -271,6 +289,29 @@ export default function Home() {
       return result;
     });
   };
+
+  useEffect(() => {
+    try {
+      const storedCart = window.localStorage.getItem(CART_STORAGE_KEY);
+      const storedFavorites = window.localStorage.getItem(FAVORITES_STORAGE_KEY);
+      const storedDestination = window.localStorage.getItem(DESTINATION_STORAGE_KEY) as DestinationCode | null;
+      if (storedCart) setCart(JSON.parse(storedCart));
+      if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
+      if (storedDestination && storedDestination in destinations) setDestination(storedDestination);
+    } catch {
+      window.localStorage.removeItem(CART_STORAGE_KEY);
+      window.localStorage.removeItem(FAVORITES_STORAGE_KEY);
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+    window.localStorage.setItem(DESTINATION_STORAGE_KEY, destination);
+  }, [cart, destination, favorites, hydrated]);
 
   useEffect(() => {
     const modelContext = (document as WebMCPDocument).modelContext;
@@ -323,6 +364,11 @@ export default function Home() {
             <span className="search-shortcut" aria-hidden="true">⌘ K</span>
           </label>
           <div className="store-actions">
+            <label className="store-destination"><MapPin aria-hidden="true" /><span>{t.deliverTo}</span>
+              <select value={destination} onChange={(event) => setDestination(event.target.value as DestinationCode)} aria-label={t.deliverTo}>
+                {Object.entries(destinations).map(([code, names]) => <option value={code} key={code}>{names[locale]}</option>)}
+              </select>
+            </label>
             <label className="language-control store-language"><span className="sr-only">Language</span><Globe2 aria-hidden="true" />
               <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)}><option value="en">EN · USD</option><option value="zh">中文 · USD</option><option value="es">ES · USD</option></select>
             </label>
@@ -335,7 +381,7 @@ export default function Home() {
                     <div className="quantity-control" aria-label={`${product.name} quantity`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`Decrease ${product.name} quantity`}><Minus /></button><span>{cart[product.id]}</span><button onClick={() => changeQuantity(product.id, 1)} aria-label={`Increase ${product.name} quantity`}><Plus /></button></div>
                   </div></div>
                 ))}</div>
-                <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>${cartTotal}</strong></div><Button className="checkout-button" disabled={!cartCount} onClick={() => toast.success("Checkout handoff ready")}>{t.checkout}</Button><div className="payment-marks" aria-label="Accepted payment methods"><span>VISA</span><span>PayPal</span><span>Pay</span><span>支付宝</span></div></SheetFooter>
+                <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>${cartTotal.toFixed(2)}</strong></div><Button className="checkout-button" disabled={!cartCount} onClick={() => window.location.assign("/checkout")}>{t.checkout}</Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small><div className="payment-marks" aria-label="Accepted payment methods"><span>VISA</span><span>PayPal</span><span>Pay</span><span>支付宝</span></div></SheetFooter>
               </SheetContent>
             </Sheet>
           </div>
@@ -366,10 +412,15 @@ export default function Home() {
 
       <section className="store-products" id="products" aria-labelledby="products-title">
         <div className="store-products-heading"><div><p>{t.bestKicker}</p><h2 id="products-title">{t.bestTitle}</h2></div><p>{t.bestBody}</p><button onClick={() => { setCategory("all"); setSearch(""); }}>{t.viewAll}<ArrowRight aria-hidden="true" /></button></div>
-        <div className="store-product-filters" aria-label="Product filters">{categoryOrder.map((item, index) => <button key={item} onClick={() => setCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}{search && <span>“{search}”</span>}</div>
+        <div className="store-product-filters" aria-label="Product filters">
+          <div>{categoryOrder.map((item, index) => <button key={item} onClick={() => setCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}</div>
+          {search && <span>“{search}”</span>}
+          <label className="store-sort"><span>{t.sort}</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>{(["featured", "price-low", "price-high", "rating"] as SortOrder[]).map((value, index) => <option value={value} key={value}>{t.sortOptions[index]}</option>)}</select></label>
+        </div>
         <div className="store-product-grid" aria-live="polite">
           {visibleProducts.map((product) => (
             <article className="store-product-card" key={product.id}>
+              <button className="store-wishlist" onClick={() => toggleFavorite(product.id)} aria-label={favorites[product.id] ? `${t.saved}: ${product.name}` : `${t.save}: ${product.name}`} aria-pressed={Boolean(favorites[product.id])}><Heart aria-hidden="true" fill={favorites[product.id] ? "currentColor" : "none"} /></button>
               <button className={`store-product-media store-product-${product.color}`} onClick={() => setSelectedProduct(product)} aria-label={`${t.quickView}: ${product.name}`}><span className="store-product-badge">{product.badge[locale]}</span><Image src={product.image} alt={product.name} width={900} height={900} /><span className="store-quick-view">{t.quickView}</span></button>
               <div className="store-product-rating" aria-label={`${product.rating} ${t.rating}`}><Star aria-hidden="true" fill="currentColor" /><span>{product.rating}</span><span>({product.reviews})</span></div>
               <div className="store-product-copy"><button onClick={() => setSelectedProduct(product)}><h3>{product.name}</h3><p>{product.description[locale]}</p></button><div><strong>${product.price}</strong>{product.compareAt && <del>${product.compareAt}</del>}</div></div>
@@ -392,7 +443,7 @@ export default function Home() {
       <footer className="store-footer"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a><p>{t.footer}</p><div><a href="#products">Shop</a><a href="#shipping">Shipping</a><a href="/ops">{t.merchant}</a></div></footer>
 
       <Sheet open={Boolean(selectedProduct)} onOpenChange={(open) => !open && setSelectedProduct(null)}>
-        <SheetContent className="store-detail-sheet">{selectedProduct && <><div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={900} height={900} /></div><SheetHeader className="store-detail-header"><SheetDescription>{selectedProduct.badge[locale]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader><div className="store-detail-body"><div className="store-detail-price"><strong>${selectedProduct.price}</strong>{selectedProduct.compareAt && <del>${selectedProduct.compareAt}</del>}</div><div className="store-product-rating"><Star aria-hidden="true" fill="currentColor" /><span>{selectedProduct.rating}</span><span>({selectedProduct.reviews})</span></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote}</span></div><SheetFooter className="store-detail-footer"><Button onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{t.add} · ${selectedProduct.price}</Button></SheetFooter></>}</SheetContent>
+        <SheetContent className="store-detail-sheet">{selectedProduct && <><div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={900} height={900} /></div><SheetHeader className="store-detail-header"><SheetDescription>{selectedProduct.badge[locale]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader><div className="store-detail-body"><div className="store-detail-price"><strong>${selectedProduct.price}</strong>{selectedProduct.compareAt && <del>${selectedProduct.compareAt}</del>}</div><div className="store-product-rating"><Star aria-hidden="true" fill="currentColor" /><span>{selectedProduct.rating}</span><span>({selectedProduct.reviews})</span></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote} · {selectedProduct.inventory} available</span></div><SheetFooter className="store-detail-footer"><Button onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{t.add} · ${selectedProduct.price}</Button><Button variant="outline" onClick={() => toggleFavorite(selectedProduct.id)}><Heart aria-hidden="true" fill={favorites[selectedProduct.id] ? "currentColor" : "none"} />{favorites[selectedProduct.id] ? t.saved : t.save}</Button></SheetFooter></>}</SheetContent>
       </Sheet>
     </main>
   );

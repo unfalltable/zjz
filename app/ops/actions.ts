@@ -20,7 +20,7 @@ export const initialOpsActionState: OpsActionState = {
 };
 
 const orderStatusSchema = z.object({
-  orderNumber: z.string().regex(/^HW-\d{5}$/),
+  orderNumber: z.string().regex(/^(?:MW|HW)-\d{5}$/),
   status: z.enum(orderStatuses),
 });
 
