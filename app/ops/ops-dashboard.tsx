@@ -8,6 +8,7 @@ import {
   Check,
   CircleAlert,
   CircleDot,
+  Clock3,
   Globe2,
   House,
   Headphones,
@@ -202,6 +203,7 @@ const copy = {
 
 const statusLabels: Record<Locale, Record<OrderStatus, string>> = {
   en: {
+    payment_pending: "Payment pending",
     purchase: "Purchase task",
     packing: "Packing",
     handoff: "Forwarder handoff",
@@ -209,6 +211,7 @@ const statusLabels: Record<Locale, Record<OrderStatus, string>> = {
     delivered: "Delivered",
   },
   zh: {
+    payment_pending: "待支付",
     purchase: "采购任务",
     packing: "打包中",
     handoff: "货代交接",
@@ -234,7 +237,7 @@ const navItems = [
 const integrations = [
   { name: "PDD", group: "Sourcing", icon: Store, connected: true },
   { name: "Shopify", group: "Commerce", icon: ShoppingBag, connected: true },
-  { name: "Stripe", group: "Payments", icon: CircleDot, connected: true },
+  { name: "Stripe", group: "Verification pending", icon: CircleDot, connected: false },
   { name: "4PX", group: "Logistics", icon: Plane, connected: false },
   { name: "ShipStation", group: "Shipping", icon: Truck, connected: false },
   { name: "Gorgias", group: "Support", icon: Headphones, connected: false },
@@ -263,7 +266,9 @@ export function OpsDashboard({
     () =>
       metrics.open.reduce<Record<FulfillmentMode, number>>(
         (counts, order) => {
-          counts[order.fulfillmentMode] += 1;
+          order.routeModes.forEach((mode) => {
+            counts[mode] += 1;
+          });
           return counts;
         },
         { marketplace: 0, self: 0, supplier: 0 }
@@ -500,7 +505,7 @@ function OrdersTable({
               </TableCell>
               <TableCell><strong>{order.customerName}</strong><span className="ops-cell-meta">{order.destination}</span></TableCell>
               <TableCell>{order.productName}</TableCell>
-              <TableCell><LaneBadge mode={order.fulfillmentMode} locale={locale} /></TableCell>
+              <TableCell><LaneBadge mode={order.fulfillmentMode} modes={order.routeModes} locale={locale} /></TableCell>
               <TableCell className="ops-status-cell">
                 <span className={`ops-status-dot status-${order.status}`} aria-hidden="true" />
                 <div><strong>{statusLabels[locale][order.status]}</strong><Progress value={order.progress} /></div>
@@ -575,6 +580,10 @@ function StatusEditor({
   const t = copy[locale];
   useActionToast(state);
 
+  if (order.paymentStatus !== "paid") {
+    return <span className="ops-payment-lock"><Clock3 aria-hidden="true" />{locale === "zh" ? "等待付款" : "Awaiting payment"}</span>;
+  }
+
   return (
     <form action={formAction} className="ops-inline-form">
       <input type="hidden" name="orderNumber" value={order.orderNumber} />
@@ -609,9 +618,12 @@ function StockEditor({ sku, editable, locale }: { sku: string; editable: boolean
   );
 }
 
-function LaneBadge({ mode, locale }: { mode: FulfillmentMode; locale: Locale }) {
+function LaneBadge({ mode, modes, locale }: { mode: FulfillmentMode; modes?: FulfillmentMode[]; locale: Locale }) {
   const t = copy[locale];
   const Icon = laneMeta[mode].icon;
+  if (modes && modes.length > 1) {
+    return <span className="ops-lane-badge split"><Route aria-hidden="true" />{locale === "zh" ? `拆单 · ${modes.length} 条路线` : `Split · ${modes.length} routes`}</span>;
+  }
   return <span className={`ops-lane-badge ${laneMeta[mode].className}`}><Icon aria-hidden="true" />{t[mode]}</span>;
 }
 

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BadgeCheck,
+  Clock3,
   CreditCard,
   Globe2,
   Heart,
@@ -79,7 +80,7 @@ const copy = {
     secondaryCta: "See best sellers",
     heroDeal: "This week only",
     heroDealValue: "10% off your first order",
-    trust: ["Duties shown before payment", "30-day easy returns", "Secure local checkout"],
+    trust: ["Duties shown before payment", "30-day easy returns", "Order tracking included"],
     shopBy: "Shop by category",
     shopByBody: "Start with what you need. Stay for what you did not know existed.",
     categoryCards: [
@@ -112,12 +113,13 @@ const copy = {
     reviewer: "Maya R. · London",
     cart: "Your bag",
     cartDesc: "Delivery and estimated duties are calculated before payment.",
-    checkout: "Continue to checkout",
-    secureCheckout: "Secure checkout · taxes shown before payment",
+    checkout: "Save order request",
+    secureCheckout: "No charge · online payment activation pending",
+    track: "Track order",
     subtotal: "Subtotal",
     empty: "Your bag is empty.",
     productNote: "In stock · dispatches in 2–4 days",
-    services: ["Buyer protection", "Secure payments", "Quality checked", "Worldwide tracking"],
+    services: ["Buyer protection", "Payment activation pending", "Quality checked", "Worldwide tracking"],
     footer: "Interesting goods from Asia, made easy to buy anywhere.",
     merchant: "Merchant console",
   },
@@ -138,7 +140,7 @@ const copy = {
     secondaryCta: "查看热卖",
     heroDeal: "本周限定",
     heroDealValue: "首单立减 10%",
-    trust: ["付款前显示税费", "30 天轻松退换", "本地化安全支付"],
+    trust: ["付款前显示税费", "30 天轻松退换", "订单可全程追踪"],
     shopBy: "按品类逛",
     shopByBody: "从你需要的开始，也可能发现从未想到的好东西。",
     categoryCards: [
@@ -171,12 +173,13 @@ const copy = {
     reviewer: "Maya R. · 伦敦",
     cart: "购物袋",
     cartDesc: "运费与预估税费将在付款前计算。",
-    checkout: "继续结账",
-    secureCheckout: "安全结账 · 付款前显示税费",
+    checkout: "保存订单需求",
+    secureCheckout: "不会扣款 · 在线支付待资质开通",
+    track: "查询订单",
     subtotal: "小计",
     empty: "购物袋还是空的。",
     productNote: "现货 · 2–4 天内发出",
-    services: ["买家保障", "安全支付", "发货前质检", "全球物流追踪"],
+    services: ["买家保障", "支付能力待开通", "发货前质检", "全球物流追踪"],
     footer: "亚洲有趣好物，让世界各地都能轻松购买。",
     merchant: "商家工作台",
   },
@@ -197,7 +200,7 @@ const copy = {
     secondaryCta: "Más vendidos",
     heroDeal: "Solo esta semana",
     heroDealValue: "10% en tu primer pedido",
-    trust: ["Impuestos antes de pagar", "Devoluciones en 30 días", "Pago local seguro"],
+    trust: ["Impuestos antes de pagar", "Devoluciones en 30 días", "Seguimiento del pedido"],
     shopBy: "Comprar por categoría",
     shopByBody: "Empieza por lo que necesitas. Quédate por lo inesperado.",
     categoryCards: [
@@ -230,12 +233,13 @@ const copy = {
     reviewer: "Maya R. · Londres",
     cart: "Tu bolsa",
     cartDesc: "Envío e impuestos estimados se calculan antes del pago.",
-    checkout: "Continuar al pago",
-    secureCheckout: "Pago seguro · impuestos antes de pagar",
+    checkout: "Guardar solicitud",
+    secureCheckout: "Sin cargo · pago en proceso de activación",
+    track: "Seguir pedido",
     subtotal: "Subtotal",
     empty: "Tu bolsa está vacía.",
     productNote: "En stock · sale en 2–4 días",
-    services: ["Protección al comprador", "Pagos seguros", "Control de calidad", "Seguimiento mundial"],
+    services: ["Protección al comprador", "Pago pendiente de activación", "Control de calidad", "Seguimiento mundial"],
     footer: "Productos interesantes de Asia, fáciles de comprar desde cualquier lugar.",
     merchant: "Panel de vendedor",
   },
@@ -244,9 +248,9 @@ const copy = {
 const categoryOrder: Category[] = ["all", "home", "tech", "wear"];
 const categoryImages = ["/products/kumo.webp", "/products/nova.webp", "/products/loop.webp"];
 const categoryValues: Category[] = ["home", "tech", "wear"];
-const trustIcons = [Truck, ShieldCheck, CreditCard];
+const trustIcons = [Truck, ShieldCheck, Search];
 const shippingIcons = [CreditCard, PackageCheck, Truck];
-const serviceIcons = [ShieldCheck, CreditCard, BadgeCheck, Truck];
+const serviceIcons = [ShieldCheck, Clock3, BadgeCheck, Truck];
 
 export default function Home() {
   const [locale, setLocale] = useState<Locale>("en");
@@ -381,13 +385,13 @@ export default function Home() {
                     <div className="quantity-control" aria-label={`${product.name} quantity`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`Decrease ${product.name} quantity`}><Minus /></button><span>{cart[product.id]}</span><button onClick={() => changeQuantity(product.id, 1)} aria-label={`Increase ${product.name} quantity`}><Plus /></button></div>
                   </div></div>
                 ))}</div>
-                <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>${cartTotal.toFixed(2)}</strong></div><Button className="checkout-button" disabled={!cartCount} onClick={() => window.location.assign("/checkout")}>{t.checkout}</Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small><div className="payment-marks" aria-label="Accepted payment methods"><span>VISA</span><span>PayPal</span><span>Pay</span><span>支付宝</span></div></SheetFooter>
+                <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>${cartTotal.toFixed(2)}</strong></div><Button className="checkout-button" disabled={!cartCount} onClick={() => window.location.assign("/checkout")}>{t.checkout}</Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small></SheetFooter>
               </SheetContent>
             </Sheet>
           </div>
         </div>
         <label className="store-search store-search-mobile"><Search aria-hidden="true" /><span className="sr-only">{t.search}</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && scrollToProducts()} placeholder={t.search} /></label>
-        <nav className="store-category-nav" aria-label="Shop categories">{categoryOrder.map((item, index) => <button key={item} onClick={() => chooseCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}<a href="#shipping">Shipping & returns</a></nav>
+        <nav className="store-category-nav" aria-label="Shop categories">{categoryOrder.map((item, index) => <button key={item} onClick={() => chooseCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}<a href="/track">{t.track}</a><a href="#shipping">Shipping & returns</a></nav>
       </header>
 
       <section className="store-hero" aria-labelledby="store-hero-title">

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { env } from "cloudflare:workers";
 import { z } from "zod";
 
 import { getChatGPTUser } from "@/app/chatgpt-auth";
@@ -20,7 +21,7 @@ export const initialOpsActionState: OpsActionState = {
 };
 
 const orderStatusSchema = z.object({
-  orderNumber: z.string().regex(/^(?:MW|HW)-\d{5}$/),
+  orderNumber: z.string().regex(/^(?:MW|HW)-\d{5,8}$/),
   status: z.enum(orderStatuses),
 });
 
@@ -35,6 +36,7 @@ export async function updateOrderStatusAction(
 ): Promise<OpsActionState> {
   const user = await getChatGPTUser();
   if (!user) return actionError("Sign in before changing an order.");
+  if (!isStoreOwner(user.userId)) return actionError("This account cannot manage the store.");
 
   const parsed = orderStatusSchema.safeParse({
     orderNumber: formData.get("orderNumber"),
@@ -43,12 +45,13 @@ export async function updateOrderStatusAction(
   if (!parsed.success) return actionError("Choose a valid order status.");
 
   try {
-    const changed = await setOrderStatus(
+    const result = await setOrderStatus(
       user.userId,
       parsed.data.orderNumber,
       parsed.data.status
     );
-    if (!changed) return actionError("That order could not be found.");
+    if (result === "not_found") return actionError("That order could not be found.");
+    if (result === "unpaid") return actionError("Payment must be completed before fulfillment can start.");
 
     revalidatePath("/ops");
     return {
@@ -68,6 +71,7 @@ export async function addStockAction(
 ): Promise<OpsActionState> {
   const user = await getChatGPTUser();
   if (!user) return actionError("Sign in before changing inventory.");
+  if (!isStoreOwner(user.userId)) return actionError("This account cannot manage the store.");
 
   const parsed = stockSchema.safeParse({
     sku: formData.get("sku"),
@@ -97,4 +101,9 @@ export async function addStockAction(
 
 function actionError(message: string): OpsActionState {
   return { kind: "error", message, eventId: Date.now() };
+}
+
+function isStoreOwner(userId: string) {
+  const ownerId = (env as unknown as Record<string, string | undefined>).STORE_OWNER_ID?.trim();
+  return Boolean(ownerId && ownerId === userId);
 }

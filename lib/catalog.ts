@@ -13,6 +13,7 @@ export type StoreProduct = {
   image: string;
   color: "blue" | "ice" | "coral";
   inventory: number;
+  fulfillmentMode: "marketplace" | "self" | "supplier";
   badge: Record<StoreLocale, string>;
   description: Record<StoreLocale, string>;
   detail: Record<StoreLocale, string>;
@@ -35,6 +36,7 @@ export const products: StoreProduct[] = [
     image: "/products/kumo.webp",
     color: "blue",
     inventory: 42,
+    fulfillmentMode: "marketplace",
     badge: { en: "Limited", zh: "限量", es: "Limitado" },
     description: {
       en: "Soft-touch art object · NFC passport",
@@ -59,6 +61,7 @@ export const products: StoreProduct[] = [
     image: "/products/nova.webp",
     color: "ice",
     inventory: 18,
+    fulfillmentMode: "supplier",
     badge: { en: "New", zh: "新品", es: "Nuevo" },
     description: {
       en: "Spatial audio · 12-hour battery",
@@ -83,6 +86,7 @@ export const products: StoreProduct[] = [
     image: "/products/loop.webp",
     color: "coral",
     inventory: 67,
+    fulfillmentMode: "self",
     badge: { en: "Best seller", zh: "热卖", es: "Más vendido" },
     description: {
       en: "Recycled nylon · modular strap",
@@ -107,4 +111,3 @@ export const destinations = {
 } as const;
 
 export type DestinationCode = keyof typeof destinations;
-

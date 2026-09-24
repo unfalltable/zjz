@@ -1,11 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ComponentProps } from "react";
 import {
   ArrowLeft,
   Check,
-  CreditCard,
+  Clock3,
   LockKeyhole,
   MapPin,
   PackageCheck,
@@ -26,6 +26,7 @@ import {
   products,
   type DestinationCode,
 } from "@/lib/catalog";
+import { createPendingOrderAction } from "./actions";
 
 type CheckoutStep = 1 | 2 | 3;
 type DeliveryMethod = "standard" | "express" | "priority";
@@ -39,10 +40,6 @@ type CheckoutFields = {
   region: string;
   postal: string;
   phone: string;
-  cardName: string;
-  cardNumber: string;
-  expiry: string;
-  cvc: string;
 };
 type FieldName = keyof CheckoutFields;
 
@@ -56,10 +53,6 @@ const initialFields: CheckoutFields = {
   region: "",
   postal: "",
   phone: "",
-  cardName: "",
-  cardNumber: "",
-  expiry: "",
-  cvc: "",
 };
 
 const deliveryOptions: Array<{
@@ -84,7 +77,11 @@ export default function CheckoutPage() {
   const [marketing, setMarketing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [routeModes, setRouteModes] = useState<string[]>([]);
+  const [submissionError, setSubmissionError] = useState("");
+  const [isSubmitting, startSubmit] = useTransition();
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const idempotencyKeyRef = useRef("");
 
   useEffect(() => {
     try {
@@ -126,16 +123,13 @@ export default function CheckoutPage() {
     if (name === "email" && !/^\S+@\S+\.\S+$/.test(value)) return "Enter a valid email address.";
     if (name === "phone" && value.replace(/\D/g, "").length < 7) return "Enter a valid phone number.";
     if (name === "postal" && value.length < 3) return "Enter a valid postal code.";
-    if (name === "cardNumber" && value.replace(/\D/g, "").length < 15) return "Enter a valid card number.";
-    if (name === "expiry" && !/^(0[1-9]|1[0-2])\s*\/\s*\d{2}$/.test(value)) return "Use MM / YY.";
-    if (name === "cvc" && !/^\d{3,4}$/.test(value)) return "Enter the 3 or 4 digit security code.";
     return undefined;
   };
 
   const fieldsForStep: Record<CheckoutStep, FieldName[]> = {
     1: ["email", "firstName", "lastName", "address", "city", "postal", "phone"],
     2: [],
-    3: ["cardName", "cardNumber", "expiry", "cvc"],
+    3: [],
   };
 
   const validateCurrentStep = () => {
@@ -159,12 +153,41 @@ export default function CheckoutPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    const order = `MW-${Math.floor(10000 + Math.random() * 90000)}`;
-    setOrderNumber(order);
-    window.localStorage.removeItem(CART_STORAGE_KEY);
-    window.localStorage.setItem("miova_last_order_v1", JSON.stringify({ order, total, createdAt: new Date().toISOString() }));
-    setCart({});
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    submitPendingOrder();
+  };
+
+  const submitPendingOrder = () => {
+    setSubmissionError("");
+    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = window.crypto.randomUUID();
+
+    startSubmit(async () => {
+      const result = await createPendingOrderAction({
+        idempotencyKey: idempotencyKeyRef.current,
+        ...fields,
+        destination,
+        deliveryMethod,
+        marketingOptIn: marketing,
+        website: "",
+        items: cartLines.map((product) => ({ id: product.id, quantity: cart[product.id] })),
+      });
+
+      if (!result.ok) {
+        setSubmissionError(result.message);
+        window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
+        return;
+      }
+
+      setOrderNumber(result.orderNumber);
+      setRouteModes(result.routeModes);
+      window.localStorage.removeItem(CART_STORAGE_KEY);
+      window.localStorage.setItem("miova_last_order_v1", JSON.stringify({
+        order: result.orderNumber,
+        paymentStatus: result.paymentStatus,
+        createdAt: new Date().toISOString(),
+      }));
+      setCart({});
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
   };
 
   const onBlur = (name: FieldName) => {
@@ -186,12 +209,13 @@ export default function CheckoutPage() {
       <main className="checkout-success">
         <div className="checkout-success-card">
           <span className="success-icon" aria-hidden="true"><Check /></span>
-          <p className="checkout-kicker">ORDER CONFIRMED</p>
-          <h1>Thank you, {fields.firstName}.</h1>
-          <p>Your order <strong>{orderNumber}</strong> is confirmed. A receipt and tracking updates will be sent to <strong>{fields.email}</strong>.</p>
+          <p className="checkout-kicker">ORDER REQUEST SAVED</p>
+          <h1>We saved your order.</h1>
+          <p><strong>{orderNumber}</strong> is waiting for payment activation. Nothing was charged. We will contact <strong>{fields.email}</strong> when online payment is available.</p>
           <div className="success-route"><MapPin aria-hidden="true" /><span>{fields.city}, {destinations[destination].en}</span><Truck aria-hidden="true" /><span>{selectedDelivery.timing}</span></div>
-          <a className="checkout-primary-link" href="/">Continue shopping</a>
-          <p className="prototype-note">Prototype confirmation — no payment was charged.</p>
+          <div className="success-route-plan"><strong>Fulfillment prepared</strong><span>{routeModes.length > 1 ? `${routeModes.length} shipment routes` : `${routeModes[0] ?? "store"} route`}</span></div>
+          <div className="checkout-success-actions"><a className="checkout-primary-link" href={`/track?order=${orderNumber}`}>Track this order</a><a className="checkout-secondary-link" href="/">Continue shopping</a></div>
+          <p className="prototype-note">Payment status: pending merchant verification.</p>
         </div>
       </main>
     );
@@ -212,25 +236,32 @@ export default function CheckoutPage() {
     <main className="checkout-shell">
       <header className="checkout-header">
         <a className="brand checkout-brand" href="/" aria-label="MIOVA 妙物 home"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a>
-        <div className="checkout-secure"><LockKeyhole aria-hidden="true" /><span>Secure checkout</span></div>
+        <div className="checkout-secure"><LockKeyhole aria-hidden="true" /><span>Protected checkout</span></div>
       </header>
 
       <div className="checkout-progress" aria-label={`Checkout step ${step} of 3`}>
-        <div><span>0{step} / 03</span><strong>{step === 1 ? "Delivery details" : step === 2 ? "Shipping method" : "Payment"}</strong></div>
+        <div><span>0{step} / 03</span><strong>{step === 1 ? "Delivery details" : step === 2 ? "Shipping method" : "Review"}</strong></div>
         <Progress value={progress} />
       </div>
 
-      <div className="checkout-demo-note"><ShieldCheck aria-hidden="true" /><span>This is a fully interactive prototype checkout. Card details stay in your browser and no payment is charged.</span></div>
+      <div className="checkout-demo-note"><ShieldCheck aria-hidden="true" /><span>Online payment is paused while merchant verification is completed. Saving an order charges nothing.</span></div>
 
       <div className="checkout-layout">
         <section className="checkout-form-panel" aria-labelledby="checkout-title">
           <a href="/" className="checkout-back"><ArrowLeft aria-hidden="true" />Back to store</a>
-          <div className="checkout-heading"><p>STEP {step}</p><h1 id="checkout-title">{step === 1 ? "Where should we send it?" : step === 2 ? "Choose your delivery speed." : "Complete your order."}</h1></div>
+          <div className="checkout-heading"><p>STEP {step}</p><h1 id="checkout-title">{step === 1 ? "Where should we send it?" : step === 2 ? "Choose your delivery speed." : "Review and save your order."}</h1></div>
 
           {Object.keys(errors).length > 0 && (
             <div className="checkout-error-summary" role="alert" tabIndex={-1} ref={errorSummaryRef}>
               <strong>Check the highlighted fields.</strong>
               <p>Your information is still here. Fix the details below and continue.</p>
+            </div>
+          )}
+
+          {submissionError && (
+            <div className="checkout-error-summary" role="alert" tabIndex={-1} ref={errorSummaryRef}>
+              <strong>We could not save the order.</strong>
+              <p>{submissionError}</p>
             </div>
           )}
 
@@ -268,22 +299,18 @@ export default function CheckoutPage() {
                   </label>
                 ); })}
               </RadioGroup>
-              <div className="checkout-inline-actions"><Button variant="outline" onClick={() => setStep(1)}>Back</Button><Button className="checkout-next" onClick={moveForward}>Continue to payment</Button></div>
+              <div className="checkout-inline-actions"><Button variant="outline" onClick={() => setStep(1)}>Back</Button><Button className="checkout-next" onClick={moveForward}>Review order</Button></div>
             </div>
           )}
 
           {step === 3 && (
             <form className="checkout-form" onSubmit={(event) => { event.preventDefault(); moveForward(); }} noValidate>
-              <div className="payment-heading"><CreditCard aria-hidden="true" /><div><strong>Credit or debit card</strong><span>Encrypted checkout interface</span></div><div className="payment-marks"><span>VISA</span><span>MC</span><span>AMEX</span></div></div>
-              <fieldset><legend>Card details</legend>
-                <CheckoutField label="Name on card" name="cardName" value={fields.cardName} error={errors.cardName} autoComplete="cc-name" onChange={updateField} onBlur={onBlur} />
-                <CheckoutField label="Card number" name="cardNumber" value={fields.cardNumber} error={errors.cardNumber} inputMode="numeric" autoComplete="cc-number" placeholder="0000 0000 0000 0000" onChange={updateField} onBlur={onBlur} />
-                <div className="checkout-field-grid">
-                  <CheckoutField label="Expiry" name="expiry" value={fields.expiry} error={errors.expiry} inputMode="numeric" autoComplete="cc-exp" placeholder="MM / YY" onChange={updateField} onBlur={onBlur} />
-                  <CheckoutField label="Security code" name="cvc" value={fields.cvc} error={errors.cvc} inputMode="numeric" autoComplete="cc-csc" placeholder="CVC" onChange={updateField} onBlur={onBlur} />
-                </div>
-              </fieldset>
-              <div className="checkout-inline-actions"><Button variant="outline" type="button" onClick={() => setStep(2)}>Back</Button><Button type="submit" className="checkout-next"><LockKeyhole aria-hidden="true" />Place order · ${total.toFixed(2)}</Button></div>
+              <div className="payment-heading payment-paused"><Clock3 aria-hidden="true" /><div><strong>Payment activation pending</strong><span>Merchant verification is still in progress</span></div><span className="payment-status-pill">NO CHARGE</span></div>
+              <div className="payment-paused-panel">
+                <div><ShieldCheck aria-hidden="true" /><span><strong>Your order details will be saved securely.</strong><small>No card or bank information is requested or stored.</small></span></div>
+                <p>Once payment is enabled, this order can move from <strong>Payment pending</strong> into the correct fulfillment route automatically.</p>
+              </div>
+              <div className="checkout-inline-actions"><Button variant="outline" type="button" onClick={() => setStep(2)} disabled={isSubmitting}>Back</Button><Button type="submit" className="checkout-next" disabled={isSubmitting}><LockKeyhole aria-hidden="true" />{isSubmitting ? "Saving order…" : `Save pending order · $${total.toFixed(2)}`}</Button></div>
             </form>
           )}
         </section>
@@ -292,7 +319,7 @@ export default function CheckoutPage() {
           <div className="summary-heading"><h2 id="summary-title">Order summary</h2><a href="/">Edit bag</a></div>
           <div className="summary-lines">{cartLines.map((product) => <div className="summary-line" key={product.id}><div className={`summary-media store-product-${product.color}`}><Image src={product.image} alt="" width={160} height={160} /><span>{cart[product.id]}</span></div><div><strong>{product.name}</strong><small>{product.description.en}</small><span>{product.sku}</span></div><b>${(product.price * cart[product.id]).toFixed(2)}</b></div>)}</div>
           <dl className="summary-totals"><div><dt>Subtotal</dt><dd>${subtotal.toFixed(2)}</dd></div><div><dt>Shipping</dt><dd>{shipping === 0 ? "FREE" : `$${shipping.toFixed(2)}`}</dd></div><div><dt>Estimated duties</dt><dd>$0.00</dd></div><div className="summary-total"><dt>Total</dt><dd><small>USD</small>${total.toFixed(2)}</dd></div></dl>
-          <div className="summary-trust"><div><ShieldCheck aria-hidden="true" /><span><strong>Buyer protection</strong><small>30-day returns on eligible items</small></span></div><div><LockKeyhole aria-hidden="true" /><span><strong>Secure checkout</strong><small>Card data is never stored in this prototype</small></span></div></div>
+          <div className="summary-trust"><div><ShieldCheck aria-hidden="true" /><span><strong>Buyer protection</strong><small>30-day returns on eligible items</small></span></div><div><LockKeyhole aria-hidden="true" /><span><strong>No payment collected</strong><small>Payment remains pending until merchant verification is complete</small></span></div></div>
         </aside>
       </div>
     </main>

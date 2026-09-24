@@ -16,6 +16,8 @@ const seedOrders: OpsOrder[] = [
     amountCents: 8900,
     currency: "USD",
     fulfillmentMode: "marketplace",
+    routeModes: ["marketplace"],
+    paymentStatus: "paid",
     status: "purchase",
     progress: 22,
     createdAt: "2026-09-24T03:18:00.000Z",
@@ -29,6 +31,8 @@ const seedOrders: OpsOrder[] = [
     amountCents: 12900,
     currency: "USD",
     fulfillmentMode: "supplier",
+    routeModes: ["supplier"],
+    paymentStatus: "paid",
     status: "packing",
     progress: 46,
     createdAt: "2026-09-24T01:42:00.000Z",
@@ -42,6 +46,8 @@ const seedOrders: OpsOrder[] = [
     amountCents: 6400,
     currency: "USD",
     fulfillmentMode: "self",
+    routeModes: ["self"],
+    paymentStatus: "paid",
     status: "handoff",
     progress: 70,
     createdAt: "2026-09-23T22:17:00.000Z",
@@ -55,6 +61,8 @@ const seedOrders: OpsOrder[] = [
     amountCents: 17800,
     currency: "USD",
     fulfillmentMode: "marketplace",
+    routeModes: ["marketplace"],
+    paymentStatus: "paid",
     status: "transit",
     progress: 88,
     createdAt: "2026-09-23T17:03:00.000Z",
@@ -101,6 +109,7 @@ export const demoSnapshot: OpsSnapshot = {
 };
 
 const statusProgress: Record<OrderStatus, number> = {
+  payment_pending: 5,
   purchase: 22,
   packing: 46,
   handoff: 70,
@@ -116,6 +125,8 @@ type OrderRow = {
   amountCents: number;
   currency: string;
   fulfillmentMode: FulfillmentMode;
+  paymentStatus: "pending" | "paid" | "failed" | "refunded";
+  lineItemsJson: string | null;
   status: OrderStatus;
   progress: number;
   createdAt: string;
@@ -148,6 +159,8 @@ export async function getOpsSnapshot(ownerId: string): Promise<OpsSnapshot> {
           amount_cents AS amountCents,
           currency,
           fulfillment_mode AS fulfillmentMode,
+          payment_status AS paymentStatus,
+          line_items_json AS lineItemsJson,
           status,
           progress,
           created_at AS createdAt,
@@ -178,7 +191,10 @@ export async function getOpsSnapshot(ownerId: string): Promise<OpsSnapshot> {
   ]);
 
   return {
-    orders: orderResult.results,
+    orders: orderResult.results.map((order) => ({
+      ...order,
+      routeModes: parseRouteModes(order.lineItemsJson, order.fulfillmentMode),
+    })),
     products: productResult.results,
   };
 }
@@ -188,6 +204,21 @@ export async function setOrderStatus(
   orderNumber: string,
   status: OrderStatus
 ) {
+  const current = await getD1()
+    .prepare(
+      `SELECT payment_status AS paymentStatus
+       FROM orders
+       WHERE owner_id = ? AND order_number = ?
+       LIMIT 1`
+    )
+    .bind(ownerId, orderNumber)
+    .first<{ paymentStatus: string }>();
+
+  if (!current) return "not_found" as const;
+  if (current.paymentStatus !== "paid" && status !== "payment_pending") {
+    return "unpaid" as const;
+  }
+
   const now = new Date().toISOString();
   const result = await getD1()
     .prepare(
@@ -198,7 +229,26 @@ export async function setOrderStatus(
     .bind(status, statusProgress[status], now, ownerId, orderNumber)
     .run();
 
-  return (result.meta.changes ?? 0) > 0;
+  return (result.meta.changes ?? 0) > 0 ? ("updated" as const) : ("not_found" as const);
+}
+
+function parseRouteModes(value: string | null, fallback: FulfillmentMode): FulfillmentMode[] {
+  if (!value) return [fallback];
+  try {
+    const parsed = JSON.parse(value) as Array<{ fulfillmentMode?: string }>;
+    const modes = Array.from(
+      new Set(
+        parsed
+          .map((item) => item.fulfillmentMode)
+          .filter((mode): mode is FulfillmentMode =>
+            mode === "marketplace" || mode === "self" || mode === "supplier"
+          )
+      )
+    );
+    return modes.length ? modes : [fallback];
+  } catch {
+    return [fallback];
+  }
 }
 
 export async function addProductStock(ownerId: string, sku: string, quantity: number) {

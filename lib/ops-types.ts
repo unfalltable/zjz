@@ -1,4 +1,5 @@
 export const orderStatuses = [
+  "payment_pending",
   "purchase",
   "packing",
   "handoff",
@@ -19,6 +20,8 @@ export type OpsOrder = {
   amountCents: number;
   currency: string;
   fulfillmentMode: FulfillmentMode;
+  routeModes: FulfillmentMode[];
+  paymentStatus: "pending" | "paid" | "failed" | "refunded";
   status: OrderStatus;
   progress: number;
   createdAt: string;

@@ -14,11 +14,23 @@ export const orders = sqliteTable(
     fulfillmentMode: text("fulfillment_mode").notNull(),
     status: text("status").notNull(),
     progress: integer("progress").notNull().default(0),
+    customerEmail: text("customer_email"),
+    phone: text("phone"),
+    postalCode: text("postal_code"),
+    shippingAddress: text("shipping_address"),
+    lineItemsJson: text("line_items_json"),
+    deliveryMethod: text("delivery_method"),
+    shippingCents: integer("shipping_cents").notNull().default(0),
+    paymentStatus: text("payment_status").notNull().default("paid"),
+    source: text("source").notNull().default("seed"),
+    idempotencyKey: text("idempotency_key"),
+    marketingOptIn: integer("marketing_opt_in", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
     uniqueIndex("idx_orders_owner_number").on(table.ownerId, table.orderNumber),
+    uniqueIndex("idx_orders_owner_idempotency").on(table.ownerId, table.idempotencyKey),
     index("idx_orders_owner_status").on(table.ownerId, table.status),
   ]
 );
