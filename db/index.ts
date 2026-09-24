@@ -11,3 +11,13 @@ export function getDb() {
 
   return drizzle(env.DB, { schema });
 }
+
+export function getD1() {
+  if (!env.DB) {
+    throw new Error(
+      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` before using the operations workspace."
+    );
+  }
+
+  return env.DB;
+}

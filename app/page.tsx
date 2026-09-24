@@ -4,31 +4,25 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
-  Box,
-  Boxes,
-  CheckCircle2,
-  ChevronRight,
-  CircleDot,
+  BadgeCheck,
+  CreditCard,
+  Fingerprint,
   Globe2,
-  Headphones,
-  Link2,
-  MapPin,
+  Heart,
   Minus,
   PackageCheck,
-  Plane,
+  PackageOpen,
   Plus,
+  Ruler,
   Search,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
-  Store,
   Truck,
-  Warehouse,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import {
   Sheet,
   SheetContent,
@@ -38,7 +32,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 
 type Locale = "en" | "zh" | "es";
@@ -62,7 +55,6 @@ const copy = {
   en: {
     delivery: "Worldwide delivery · duties shown before checkout",
     nav: ["New drop", "Objects", "How it ships"],
-    seller: "Seller cockpit",
     eyebrow: "Drop 001 · 328 pieces worldwide",
     title: "Objects with their own gravity.",
     body: "Unexpected design goods, packed in Asia and delivered without the usual border drama.",
@@ -82,26 +74,25 @@ const copy = {
     categories: ["All objects", "Art toys", "Design tech", "Wearables"],
     search: "Search objects",
     searchEmpty: "No objects match that search.",
-    fulfillKicker: "Three ways to move an order",
-    fulfillTitle: "Sell first. Choose the route after.",
-    fulfillBody: "Every order carries one clear fulfillment lane, from a marketplace seller in China to your customer overseas.",
-    flowTitle: "One calm control room for every messy route.",
-    flowBody: "Switch between direct sellers, your own warehouse and approved suppliers without losing the customer promise.",
-    ordersToday: "Orders today",
-    revenue: "Revenue",
-    onTime: "On-time dispatch",
-    liveOrders: "Live orders",
-    viewAll: "View all orders",
-    integrationsTitle: "Connect the stack you already use.",
-    integrationsBody: "Commerce, payment, sourcing, support and shipping are modular—not welded into one vendor.",
-    connected: "Connected",
-    ready: "Ready to connect",
+    storyKicker: "Meet Kumo",
+    storyTitle: "Made to be held. Built to be found.",
+    storyBody: "Kumo began as a sketch of a cat drifting above the city. The finished figure keeps the soft shape, adds a pearlescent suit and carries a scannable passport that proves which piece is yours.",
+    storyCta: "Shop the first drop",
+    specs: [["Material", "Soft-touch vinyl"], ["Height", "22 cm / 8.7 in"], ["Edition", "328 numbered pieces"]],
+    shippingKicker: "Worldwide, without the guesswork",
+    shippingTitle: "From our shelf to your door.",
+    shippingBody: "The total is clear before you pay, every object is checked before dispatch, and one tracking link follows the full trip.",
+    shippingSteps: [["Know the total", "Delivery and estimated duties appear before payment."], ["Packed with care", "We inspect the object and protect the collector box."], ["Follow every mile", "Door-to-door tracking stays in one timeline."]],
+    review: "The box felt as considered as the object. Kumo arrived perfect—and earlier than the estimate.",
+    reviewer: "Maya · London collector",
+    reviewMeta: "4.9 average from 327 collectors",
+    services: ["Buyer protection", "Authenticity passport", "Localized checkout", "Door-to-door tracking"],
+    merchant: "Merchant sign in",
     footer: "Objects from Asia, carefully sent everywhere.",
   },
   zh: {
     delivery: "全球配送 · 结账前显示税费",
     nav: ["新品发售", "潮流好物", "如何发货"],
-    seller: "商家控制台",
     eyebrow: "首发系列 · 全球限量 328 件",
     title: "自带引力的物件。",
     body: "来自亚洲的意趣设计好物，包装、跨境与追踪都变得简单。",
@@ -121,26 +112,25 @@ const copy = {
     categories: ["全部好物", "艺术潮玩", "设计科技", "穿戴配饰"],
     search: "搜索商品",
     searchEmpty: "没有符合条件的商品。",
-    fulfillKicker: "一笔订单，三种发货路径",
-    fulfillTitle: "先卖出去，再选择最合适的路线。",
-    fulfillBody: "从国内平台卖家到海外顾客，每个订单都有清晰、可追踪的履约路径。",
-    flowTitle: "一间清晰的控制室，管理所有复杂路径。",
-    flowBody: "在平台卖家、自有仓和合作供应商之间灵活切换，同时保证客户体验。",
-    ordersToday: "今日订单",
-    revenue: "销售额",
-    onTime: "准时发货率",
-    liveOrders: "实时订单",
-    viewAll: "查看全部订单",
-    integrationsTitle: "连接你已经在使用的平台。",
-    integrationsBody: "电商、支付、采购、客服和物流都可以按模块扩展，不被单一供应商锁定。",
-    connected: "已连接",
-    ready: "可接入",
+    storyKicker: "认识 Kumo",
+    storyTitle: "值得握在手里，也值得被记住。",
+    storyBody: "Kumo 最初是一张漂浮在城市上空的猫咪草图。成品保留柔软轮廓，穿上珠光宇航服，并附带可扫描的专属收藏证书。",
+    storyCta: "选购首发系列",
+    specs: [["材质", "亲肤软胶"], ["高度", "22 厘米"], ["版本", "全球编号 328 件"]],
+    shippingKicker: "全球配送，简单透明",
+    shippingTitle: "从我们的货架，到你的门口。",
+    shippingBody: "付款前显示全部费用，发货前逐件检查，一个链接追踪完整旅程。",
+    shippingSteps: [["费用先看清", "付款前展示配送费用与预估税费。"], ["认真包装", "检查商品并保护收藏级外盒。"], ["全程可追踪", "一个时间线查看门到门物流。"]],
+    review: "包装和商品一样用心。Kumo 完好到达，而且比预计时间更早。",
+    reviewer: "Maya · 伦敦收藏者",
+    reviewMeta: "327 位收藏者平均评分 4.9",
+    services: ["买家保障", "真伪收藏证书", "本地化结账", "门到门追踪"],
+    merchant: "商家登录",
     footer: "来自亚洲的好物，认真送往世界各地。",
   },
   es: {
     delivery: "Envío mundial · impuestos visibles antes de pagar",
     nav: ["Nuevo drop", "Objetos", "Cómo enviamos"],
-    seller: "Panel de vendedor",
     eyebrow: "Drop 001 · 328 piezas en el mundo",
     title: "Objetos con gravedad propia.",
     body: "Diseño inesperado, preparado en Asia y entregado sin dramas fronterizos.",
@@ -160,20 +150,20 @@ const copy = {
     categories: ["Todos", "Art toys", "Tecnología", "Accesorios"],
     search: "Buscar objetos",
     searchEmpty: "Ningún objeto coincide con la búsqueda.",
-    fulfillKicker: "Tres formas de mover un pedido",
-    fulfillTitle: "Vende primero. Elige la ruta después.",
-    fulfillBody: "Cada pedido sigue una ruta clara, desde un vendedor en China hasta tu cliente internacional.",
-    flowTitle: "Un centro de control sereno para cada ruta compleja.",
-    flowBody: "Cambia entre vendedores directos, almacén propio y proveedores sin perder la promesa al cliente.",
-    ordersToday: "Pedidos de hoy",
-    revenue: "Ingresos",
-    onTime: "Despacho puntual",
-    liveOrders: "Pedidos activos",
-    viewAll: "Ver todos",
-    integrationsTitle: "Conecta las herramientas que ya usas.",
-    integrationsBody: "Comercio, pagos, compras, soporte y envíos son módulos abiertos, no una caja cerrada.",
-    connected: "Conectado",
-    ready: "Listo para conectar",
+    storyKicker: "Conoce a Kumo",
+    storyTitle: "Hecho para tocar. Creado para recordar.",
+    storyBody: "Kumo nació como el boceto de un gato flotando sobre la ciudad. La figura conserva su silueta suave, suma un traje perlado y lleva un pasaporte escaneable que identifica tu pieza.",
+    storyCta: "Comprar el primer drop",
+    specs: [["Material", "Vinilo suave"], ["Altura", "22 cm"], ["Edición", "328 piezas numeradas"]],
+    shippingKicker: "Envío mundial, sin dudas",
+    shippingTitle: "De nuestra estantería a tu puerta.",
+    shippingBody: "Ves el total antes de pagar, revisamos cada objeto antes del envío y un solo enlace sigue todo el viaje.",
+    shippingSteps: [["Conoce el total", "Envío e impuestos estimados antes de pagar."], ["Empaque cuidado", "Revisamos el objeto y protegemos la caja."], ["Sigue cada kilómetro", "Seguimiento puerta a puerta en una sola línea de tiempo."]],
+    review: "La caja estaba tan cuidada como la pieza. Kumo llegó perfecto y antes de lo previsto.",
+    reviewer: "Maya · Coleccionista en Londres",
+    reviewMeta: "4,9 de media entre 327 coleccionistas",
+    services: ["Protección al comprador", "Pasaporte de autenticidad", "Pago localizado", "Seguimiento completo"],
+    merchant: "Acceso de vendedores",
     footer: "Objetos de Asia, enviados con cuidado a todo el mundo.",
   },
 } as const;
@@ -211,62 +201,9 @@ const products = [
   },
 ];
 
-const fulfillmentModes = [
-  {
-    id: "market",
-    icon: Store,
-    title: { en: "Marketplace direct", zh: "国内平台卖家直发", es: "Envío directo del marketplace" },
-    description: {
-      en: "Buy from PDD or another marketplace. The domestic seller sends the parcel into your cross-border route.",
-      zh: "在拼多多等国内平台采购，由平台卖家把包裹直接发入你的跨境履约链路。",
-      es: "Compra en un marketplace chino y el vendedor envía el paquete a tu ruta internacional.",
-    },
-    note: { en: "Best for testing demand", zh: "适合低成本测款", es: "Ideal para validar demanda" },
-    steps: {
-      en: ["Customer pays", "Purchase task", "Seller dispatches", "Forwarder checks", "Worldwide delivery"],
-      zh: ["顾客付款", "生成采购任务", "平台卖家发货", "货代验货", "全球配送"],
-      es: ["Cliente paga", "Tarea de compra", "Vendedor envía", "Control logístico", "Entrega global"],
-    },
-  },
-  {
-    id: "self",
-    icon: Warehouse,
-    title: { en: "Pack it yourself", zh: "自主包装发货", es: "Empaque propio" },
-    description: {
-      en: "You hold stock, finish the unboxing experience and send consolidated parcels to a forwarding partner.",
-      zh: "你保管库存并完成品牌包装，再将包裹集中送往合作货代发往海外。",
-      es: "Guardas el inventario, preparas la experiencia de marca y entregas al agente logístico.",
-    },
-    note: { en: "Best for brand control", zh: "适合强化品牌体验", es: "Máximo control de marca" },
-    steps: {
-      en: ["Order assigned", "Pick inventory", "Brand packing", "Forwarder scan", "Worldwide delivery"],
-      zh: ["订单分配", "拣选库存", "品牌包装", "货代入库", "全球配送"],
-      es: ["Asignar pedido", "Preparar stock", "Empaque de marca", "Escaneo logístico", "Entrega global"],
-    },
-  },
-  {
-    id: "supplier",
-    icon: Boxes,
-    title: { en: "Supplier managed", zh: "供应商协同发货", es: "Gestionado por proveedor" },
-    description: {
-      en: "An approved supplier follows your packaging spec, quality checklist and export handoff rules.",
-      zh: "合作供应商按照你的包装规范、质检清单和出口交接要求完成履约。",
-      es: "Un proveedor aprobado aplica tus normas de empaque, calidad y entrega de exportación.",
-    },
-    note: { en: "Best for scaling winners", zh: "适合爆款规模化", es: "Ideal para escalar" },
-    steps: {
-      en: ["Order assigned", "Supplier confirms", "Custom packing", "QC evidence", "Worldwide delivery"],
-      zh: ["订单分配", "供应商确认", "定制包装", "质检凭证", "全球配送"],
-      es: ["Asignar pedido", "Proveedor confirma", "Empaque propio", "Prueba de calidad", "Entrega global"],
-    },
-  },
-];
-
-const liveOrders = [
-  { id: "HW-1842", place: "Vancouver, CA", product: "Kumo Cloud Cat", lane: "PDD direct", status: "Forwarder received", progress: 64 },
-  { id: "HW-1841", place: "Paris, FR", product: "Loop Mini", lane: "Self-pack", status: "Ready for pickup", progress: 42 },
-  { id: "HW-1839", place: "Sydney, AU", product: "Nova Orb", lane: "Supplier", status: "QC approved", progress: 78 },
-];
+const specIcons = [Fingerprint, Ruler, BadgeCheck];
+const shippingIcons = [CreditCard, PackageCheck, Truck];
+const serviceIcons = [ShieldCheck, Fingerprint, Globe2, Truck];
 
 export default function Home() {
   const [locale, setLocale] = useState<Locale>("en");
@@ -382,7 +319,6 @@ export default function Home() {
               <option value="es">ES</option>
             </select>
           </label>
-          <a className="seller-link" href="#flow">{t.seller}</a>
           <Sheet>
             <SheetTrigger asChild>
               <Button className="bag-button" aria-label={`${t.cart}, ${cartCount} items`}>
@@ -482,103 +418,63 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="shipping-section" id="shipping">
-        <div className="shipping-intro">
-          <p className="section-kicker">{t.fulfillKicker}</p>
-          <h2>{t.fulfillTitle}</h2>
-          <p>{t.fulfillBody}</p>
+      <section className="story-section" aria-labelledby="story-title">
+        <div className="story-visual">
+          <span>HW–001–K</span>
+          <Image src="/products/kumo.webp" alt="Kumo Cloud Cat collectible shown in profile" width={1000} height={1000} />
         </div>
-        <Tabs defaultValue="market" className="fulfillment-tabs">
-          <TabsList className="fulfillment-tab-list">
-            {fulfillmentModes.map((mode) => {
-              const Icon = mode.icon;
-              return <TabsTrigger key={mode.id} value={mode.id}><Icon aria-hidden="true" /><span>{mode.title[locale]}</span></TabsTrigger>;
+        <div className="story-copy">
+          <p className="section-kicker"><PackageOpen aria-hidden="true" />{t.storyKicker}</p>
+          <h2 id="story-title">{t.storyTitle}</h2>
+          <p>{t.storyBody}</p>
+          <div className="story-specs">
+            {t.specs.map(([label, value], index) => {
+              const Icon = specIcons[index];
+              return <div key={label}><Icon aria-hidden="true" /><span>{label}</span><strong>{value}</strong></div>;
             })}
-          </TabsList>
-          {fulfillmentModes.map((mode) => {
-            const Icon = mode.icon;
+          </div>
+          <a className="story-link" href="#objects">{t.storyCta}<ArrowUpRight aria-hidden="true" /></a>
+        </div>
+      </section>
+
+      <section className="consumer-shipping" id="shipping" aria-labelledby="shipping-title">
+        <div className="consumer-shipping-heading">
+          <p className="section-kicker">{t.shippingKicker}</p>
+          <h2 id="shipping-title">{t.shippingTitle}</h2>
+          <p>{t.shippingBody}</p>
+        </div>
+        <div className="shipping-steps">
+          {t.shippingSteps.map(([title, body], index) => {
+            const Icon = shippingIcons[index];
             return (
-              <TabsContent key={mode.id} value={mode.id} className="fulfillment-panel">
-                <div className="lane-description">
-                  <div className="lane-icon"><Icon aria-hidden="true" /></div>
-                  <div><h3>{mode.title[locale]}</h3><p>{mode.description[locale]}</p><span>{mode.note[locale]}</span></div>
-                </div>
-                <div className="route-map">
-                  {mode.steps[locale].map((step, index) => (
-                    <div className="route-step" key={step}>
-                      <span>{index + 1}</span><strong>{step}</strong>{index < mode.steps[locale].length - 1 && <ChevronRight aria-hidden="true" />}
-                    </div>
-                  ))}
-                </div>
-                <div className="route-proof">
-                  <span><CheckCircle2 aria-hidden="true" /> Auto status sync</span>
-                  <span><ShieldCheck aria-hidden="true" /> Evidence at every handoff</span>
-                  <span><Globe2 aria-hidden="true" /> 40+ destination markets</span>
-                </div>
-              </TabsContent>
+              <article key={title}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <Icon aria-hidden="true" />
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </article>
             );
           })}
-        </Tabs>
-      </section>
-
-      <section className="flow-section" id="flow">
-        <div className="flow-copy">
-          <p className="section-kicker">HATCHWAY FLOW</p>
-          <h2>{t.flowTitle}</h2>
-          <p>{t.flowBody}</p>
-          <div className="flow-metrics">
-            <div><strong>24</strong><span>{t.ordersToday}</span></div>
-            <div><strong>$5,840</strong><span>{t.revenue}</span></div>
-            <div><strong>98.4%</strong><span>{t.onTime}</span></div>
-          </div>
-        </div>
-        <div className="flow-console">
-          <div className="console-topbar">
-            <div><span className="live-dot" /> {t.liveOrders}</div>
-            <button>{t.viewAll}<ArrowUpRight aria-hidden="true" /></button>
-          </div>
-          <div className="order-list">
-            {liveOrders.map((order) => (
-              <article className="order-row" key={order.id}>
-                <div className="order-id"><span>{order.id}</span><strong>{order.product}</strong></div>
-                <div className="order-place"><MapPin aria-hidden="true" />{order.place}</div>
-                <span className="lane-pill">{order.lane}</span>
-                <div className="order-progress"><span>{order.status}</span><Progress value={order.progress} /></div>
-              </article>
-            ))}
-          </div>
-          <div className="console-footer">
-            <div className="route-signal"><Store aria-hidden="true" /><span>PDD direct</span><strong>08</strong></div>
-            <div className="route-signal"><Warehouse aria-hidden="true" /><span>Self-pack</span><strong>11</strong></div>
-            <div className="route-signal"><Boxes aria-hidden="true" /><span>Supplier</span><strong>05</strong></div>
-          </div>
         </div>
       </section>
 
-      <section className="integration-section">
-        <div className="section-heading integration-heading"><h2>{t.integrationsTitle}</h2><p>{t.integrationsBody}</p></div>
-        <div className="integration-grid">
-          <article><div className="integration-logo">多</div><div><strong>PDD</strong><span>{t.connected}</span></div><CheckCircle2 aria-label={t.connected} /></article>
-          <article><div className="integration-logo"><Box aria-hidden="true" /></div><div><strong>Shopify</strong><span>{t.connected}</span></div><CheckCircle2 aria-label={t.connected} /></article>
-          <article><div className="integration-logo"><CircleDot aria-hidden="true" /></div><div><strong>Stripe</strong><span>{t.connected}</span></div><CheckCircle2 aria-label={t.connected} /></article>
-          <article><div className="integration-logo"><Plane aria-hidden="true" /></div><div><strong>4PX</strong><span>{t.ready}</span></div><Plus aria-label={t.ready} /></article>
-          <article><div className="integration-logo"><Truck aria-hidden="true" /></div><div><strong>ShipStation</strong><span>{t.ready}</span></div><Plus aria-label={t.ready} /></article>
-          <article><div className="integration-logo"><Headphones aria-hidden="true" /></div><div><strong>Gorgias</strong><span>{t.ready}</span></div><Plus aria-label={t.ready} /></article>
-        </div>
-        <div className="api-strip"><Link2 aria-hidden="true" /><span>Open API · Webhooks · Event stream · Bring your own logistics partner</span><ArrowUpRight aria-hidden="true" /></div>
+      <section className="collector-note" aria-label="Collector review">
+        <Heart aria-hidden="true" />
+        <blockquote>“{t.review}”</blockquote>
+        <div><strong>{t.reviewer}</strong><span>{t.reviewMeta}</span></div>
       </section>
 
       <section className="service-strip" aria-label="Service commitments">
-        <div><ShieldCheck aria-hidden="true" /><span>Buyer protection</span></div>
-        <div><PackageCheck aria-hidden="true" /><span>Pre-dispatch evidence</span></div>
-        <div><Globe2 aria-hidden="true" /><span>Localized checkout</span></div>
-        <div><Truck aria-hidden="true" /><span>One tracking timeline</span></div>
+        {t.services.map((service, index) => {
+          const Icon = serviceIcons[index];
+          return <div key={service}><Icon aria-hidden="true" /><span>{service}</span></div>;
+        })}
       </section>
 
       <footer>
         <a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">H</span><span>HATCHWAY</span></a>
         <p>{t.footer}</p>
-        <div><a href="#objects">Instagram</a><a href="#shipping">Shipping</a><a href="#flow">Seller OS</a></div>
+        <div><a href="#objects">Instagram</a><a href="#shipping">Shipping</a><a href="/ops">{t.merchant}</a></div>
       </footer>
     </main>
   );
