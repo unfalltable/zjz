@@ -79,7 +79,7 @@ const copy = {
     rating: "customer rating",
     noResults: "Nothing matched that search. Try ‘speaker’, ‘bag’ or ‘home’.",
     clearSearch: "Clear search",
-    promoKicker: "THE HATCHWAY EDIT",
+    promoKicker: "THE MIOVA EDIT",
     promoTitle: "Fresh utility, not more clutter.",
     promoBody: "Every product is selected for usefulness, build quality and a point of view. The assortment can change; the standard does not.",
     promoCta: "Explore the edit",
@@ -132,7 +132,7 @@ const copy = {
     rating: "顾客评分",
     noResults: "没有匹配的商品，可以试试“音响”“包”或“家居”。",
     clearSearch: "清除搜索",
-    promoKicker: "HATCHWAY 本周精选",
+    promoKicker: "妙物本周精选",
     promoTitle: "真正有用，不制造杂物。",
     promoBody: "每件商品都经过实用性、品质与设计感筛选。商品可以更换，但选品标准不会。",
     promoCta: "探索本周精选",
@@ -185,7 +185,7 @@ const copy = {
     rating: "valoración de clientes",
     noResults: "No hay resultados. Prueba ‘altavoz’, ‘bolso’ u ‘hogar’.",
     clearSearch: "Borrar búsqueda",
-    promoKicker: "LA EDICIÓN HATCHWAY",
+    promoKicker: "LA EDICIÓN MIOVA",
     promoTitle: "Utilidad nueva, no más ruido.",
     promoBody: "Elegimos cada producto por su utilidad, calidad y personalidad. El surtido cambia; el estándar no.",
     promoCta: "Explorar la edición",
@@ -278,8 +278,8 @@ export default function Home() {
     const controller = new AbortController();
     const tools: WebMCPTool[] = [
       {
-        name: "search_hatchway_catalog",
-        description: "Search Hatchway products by keyword and optionally filter by category.",
+        name: "search_miova_catalog",
+        description: "Search MIOVA products by keyword and optionally filter by category.",
         inputSchema: { type: "object", properties: { query: { type: "string" }, category: { type: "string", enum: categoryOrder } }, required: ["query"] },
         annotations: { readOnlyHint: true, consequentialHint: false },
         execute: async (input) => {
@@ -293,7 +293,7 @@ export default function Home() {
       },
       {
         name: "add_product_to_bag",
-        description: "Add a Hatchway catalog product to the shopping bag by product ID.",
+        description: "Add a MIOVA catalog product to the shopping bag by product ID.",
         inputSchema: { type: "object", properties: { productId: { type: "string", enum: products.map((product) => product.id) } }, required: ["productId"] },
         annotations: { readOnlyHint: false, consequentialHint: false },
         execute: async (input) => {
@@ -316,7 +316,7 @@ export default function Home() {
 
       <header className="store-header" id="top">
         <div className="store-header-main">
-          <a className="brand store-brand" href="#top" aria-label="Hatchway home"><span className="brand-mark" aria-hidden="true">H</span><span>HATCHWAY</span></a>
+          <a className="brand store-brand" href="#top" aria-label="MIOVA 妙物 home"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a>
           <label className="store-search">
             <Search aria-hidden="true" /><span className="sr-only">{t.search}</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && scrollToProducts()} placeholder={t.search} />
@@ -380,7 +380,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="store-edit" aria-labelledby="edit-title"><div className="store-edit-visual"><Image src="/products/loop.webp" alt="Loop Mini Crossbody featured in the Hatchway edit" width={1000} height={1000} /><span>HATCHWAY / EDIT 09</span></div><div className="store-edit-copy"><p>{t.promoKicker}</p><h2 id="edit-title">{t.promoTitle}</h2><p>{t.promoBody}</p><a href="#products">{t.promoCta}<ArrowRight aria-hidden="true" /></a></div></section>
+      <section className="store-edit" aria-labelledby="edit-title"><div className="store-edit-visual"><Image src="/products/loop.webp" alt="Loop Mini Crossbody featured in the MIOVA edit" width={1000} height={1000} /><span>MIOVA / EDIT 09</span></div><div className="store-edit-copy"><p>{t.promoKicker}</p><h2 id="edit-title">{t.promoTitle}</h2><p>{t.promoBody}</p><a href="#products">{t.promoCta}<ArrowRight aria-hidden="true" /></a></div></section>
 
       <section className="store-shipping" id="shipping" aria-labelledby="shipping-title">
         <div className="store-shipping-heading"><h2 id="shipping-title">{t.shippingTitle}</h2><p>{t.shippingBody}</p></div>
@@ -389,7 +389,7 @@ export default function Home() {
 
       <section className="store-review" aria-label="Customer review"><div className="store-review-stars" aria-hidden="true">{[0, 1, 2, 3, 4].map((item) => <Star key={item} fill="currentColor" />)}</div><blockquote>“{t.review}”</blockquote><span>{t.reviewer}</span></section>
       <section className="service-strip" aria-label="Service commitments">{t.services.map((service, index) => { const Icon = serviceIcons[index]; return <div key={service}><Icon aria-hidden="true" /><span>{service}</span></div>; })}</section>
-      <footer className="store-footer"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">H</span><span>HATCHWAY</span></a><p>{t.footer}</p><div><a href="#products">Shop</a><a href="#shipping">Shipping</a><a href="/ops">{t.merchant}</a></div></footer>
+      <footer className="store-footer"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a><p>{t.footer}</p><div><a href="#products">Shop</a><a href="#shipping">Shipping</a><a href="/ops">{t.merchant}</a></div></footer>
 
       <Sheet open={Boolean(selectedProduct)} onOpenChange={(open) => !open && setSelectedProduct(null)}>
         <SheetContent className="store-detail-sheet">{selectedProduct && <><div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={900} height={900} /></div><SheetHeader className="store-detail-header"><SheetDescription>{selectedProduct.badge[locale]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader><div className="store-detail-body"><div className="store-detail-price"><strong>${selectedProduct.price}</strong>{selectedProduct.compareAt && <del>${selectedProduct.compareAt}</del>}</div><div className="store-product-rating"><Star aria-hidden="true" fill="currentColor" /><span>{selectedProduct.rating}</span><span>({selectedProduct.reviews})</span></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote}</span></div><SheetFooter className="store-detail-footer"><Button onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{t.add} · ${selectedProduct.price}</Button></SheetFooter></>}</SheetContent>

@@ -279,9 +279,9 @@ export function OpsDashboard({
       <Toaster position="bottom-center" />
       <Sidebar collapsible="offcanvas" className="ops-sidebar">
         <SidebarHeader className="ops-sidebar-header">
-          <a href="/" className="brand ops-brand" aria-label="Hatchway storefront">
+          <a href="/" className="brand ops-brand" aria-label="MIOVA 妙物 storefront">
             <span className="brand-mark" aria-hidden="true"><Plane /></span>
-            <span>HATCHWAY</span>
+            <span>MIOVA 妙物</span>
           </a>
           <span className="ops-console-tag">{t.system}</span>
         </SidebarHeader>
@@ -336,7 +336,7 @@ export function OpsDashboard({
         <header className="ops-topbar">
           <div>
             <SidebarTrigger className="ops-sidebar-trigger" aria-label="Open navigation" />
-            <div className="ops-breadcrumb"><span>Hatchway</span><strong>{t.overview}</strong></div>
+            <div className="ops-breadcrumb"><span>MIOVA 妙物</span><strong>{t.overview}</strong></div>
           </div>
           <div className="ops-top-actions">
             <label className="ops-language">

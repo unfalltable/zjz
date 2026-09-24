@@ -582,7 +582,7 @@ footer > div a { border-bottom: 1px solid var(--ink); }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
-/* Commerce-first storefront: retail utility with Hatchway's expressive visual language. */
+/* Commerce-first storefront: retail utility with MIOVA's expressive visual language. */
 .store-shell { background: var(--paper); }
 .store-announcement { min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 28px; border-bottom: 1px solid var(--ink); background: var(--butter); padding: 7px 18px; font-size: .72rem; letter-spacing: .035em; text-align: center; }
 .store-announcement span { color: #4d4f60; }
