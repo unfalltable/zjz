@@ -235,8 +235,8 @@ const navItems = [
 ] as const;
 
 const integrations = [
-  { name: "PDD", group: "Sourcing", icon: Store, connected: true },
-  { name: "Shopify", group: "Commerce", icon: ShoppingBag, connected: true },
+  { name: "PDD", group: "Sourcing", icon: Store, connected: false },
+  { name: "Shopify", group: "Commerce", icon: ShoppingBag, connected: false },
   { name: "Stripe", group: "Verification pending", icon: CircleDot, connected: false },
   { name: "4PX", group: "Logistics", icon: Plane, connected: false },
   { name: "ShipStation", group: "Shipping", icon: Truck, connected: false },
