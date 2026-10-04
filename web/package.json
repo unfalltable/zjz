@@ -1,0 +1,7 @@
+{
+  "name": "@miova/web",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node ../scripts/run-framework.mjs dev", "build": "node ../scripts/run-framework.mjs build" },
+  "dependencies": { "react": "19.2.6", "react-dom": "19.2.6" }
+}

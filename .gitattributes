@@ -1,0 +1,13 @@
+* text=auto
+
+# Keep source and Unix launch scripts consistent across native toolchains.
+*.dart text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf

@@ -1,0 +1,147 @@
+class Copy {
+  Copy(this.locale);
+  final String locale;
+  String t(String key) => _copy[key]?[locale] ?? _copy[key]?['en'] ?? key;
+  static const _copy = {
+    'shop': {'en': 'Shop', 'zh': '逛商城', 'es': 'Tienda'},
+    'saved': {'en': 'Saved', 'zh': '收藏', 'es': 'Favoritos'},
+    'bag': {'en': 'Bag', 'zh': '购物袋', 'es': 'Bolsa'},
+    'track': {'en': 'Track order', 'zh': '查订单', 'es': 'Seguimiento'},
+    'search': {
+      'en': 'Search interesting finds',
+      'zh': '搜索你的心头好',
+      'es': 'Buscar productos',
+    },
+    'all': {'en': 'All finds', 'zh': '全部好物', 'es': 'Todo'},
+    'home': {'en': 'Home & living', 'zh': '居家生活', 'es': 'Hogar'},
+    'tech': {'en': 'Tech & gadgets', 'zh': '数码科技', 'es': 'Tecnología'},
+    'wear': {'en': 'Style & everyday', 'zh': '穿搭日用', 'es': 'Estilo'},
+    'heading': {
+      'en': 'Little things. Great finds.',
+      'zh': '生活有趣，妙物相伴。',
+      'es': 'Pequeñas cosas. Grandes hallazgos.',
+    },
+    'curated': {
+      'en': 'Curated finds from Asia, delivered to you.',
+      'zh': '来自亚洲的精选好物，送到你身边。',
+      'es': 'Hallazgos de Asia, enviados a tu puerta.',
+    },
+    'add': {'en': 'Add to bag', 'zh': '加入购物袋', 'es': 'Añadir a la bolsa'},
+    'added': {
+      'en': 'Added to your bag',
+      'zh': '已加入购物袋',
+      'es': 'Añadido a tu bolsa',
+    },
+    'sold': {'en': 'Out of stock', 'zh': '暂时缺货', 'es': 'Agotado'},
+    'empty': {
+      'en': 'Nothing here yet',
+      'zh': '这里还空着呢',
+      'es': 'Todavía no hay nada',
+    },
+    'browse': {
+      'en': 'Discover something good',
+      'zh': '去发现好物',
+      'es': 'Descubrir productos',
+    },
+    'retry': {'en': 'Try again', 'zh': '重试', 'es': 'Reintentar'},
+    'unavailable': {
+      'en': 'The store is unavailable',
+      'zh': '商城暂时无法连接',
+      'es': 'Tienda no disponible',
+    },
+    'subtotal': {'en': 'Subtotal', 'zh': '商品小计', 'es': 'Subtotal'},
+    'shipping': {'en': 'Shipping', 'zh': '运费', 'es': 'Envío'},
+    'total': {'en': 'Total', 'zh': '总计', 'es': 'Total'},
+    'checkout': {'en': 'Continue to checkout', 'zh': '填写订单', 'es': 'Continuar'},
+    'delivery': {
+      'en': 'Delivery details',
+      'zh': '收货信息',
+      'es': 'Datos de envío',
+    },
+    'email': {'en': 'Email', 'zh': '邮箱', 'es': 'Correo electrónico'},
+    'firstName': {'en': 'First name', 'zh': '名字', 'es': 'Nombre'},
+    'lastName': {'en': 'Last name', 'zh': '姓氏', 'es': 'Apellidos'},
+    'address': {'en': 'Street address', 'zh': '街道地址', 'es': 'Dirección'},
+    'apartment': {
+      'en': 'Apartment (optional)',
+      'zh': '公寓 / 门牌（选填）',
+      'es': 'Apartamento (opcional)',
+    },
+    'city': {'en': 'City', 'zh': '城市', 'es': 'Ciudad'},
+    'region': {
+      'en': 'State / region (optional)',
+      'zh': '州 / 地区（选填）',
+      'es': 'Estado / región (opcional)',
+    },
+    'postal': {'en': 'Postal code', 'zh': '邮政编码', 'es': 'Código postal'},
+    'phone': {'en': 'Phone number', 'zh': '联系电话', 'es': 'Teléfono'},
+    'country': {'en': 'Deliver to', 'zh': '配送国家', 'es': 'Enviar a'},
+    'standard': {'en': 'Standard', 'zh': '标准配送', 'es': 'Estándar'},
+    'express': {'en': 'Express', 'zh': '快速配送', 'es': 'Exprés'},
+    'priority': {'en': 'Priority', 'zh': '优先配送', 'es': 'Prioritario'},
+    'required': {
+      'en': 'Please check this field',
+      'zh': '请检查填写内容',
+      'es': 'Revisa este campo',
+    },
+    'saveOrder': {
+      'en': 'Save order · no payment',
+      'zh': '保存订单 · 暂不付款',
+      'es': 'Guardar pedido · sin pago',
+    },
+    'paymentNotice': {
+      'en': 'Online payment is not open yet. Saving an order does not charge you or start shipping.',
+      'zh': '在线支付尚未开放。保存订单不会扣款，也不会启动发货。',
+      'es': 'El pago aún no está disponible. Guardar un pedido no genera cargos ni envíos.',
+    },
+    'pending': {
+      'en': 'Order saved · payment pending',
+      'zh': '订单已保存 · 待付款',
+      'es': 'Pedido guardado · pago pendiente',
+    },
+    'number': {'en': 'Order number', 'zh': '订单号', 'es': 'Número de pedido'},
+    'lookup': {'en': 'Find my order', 'zh': '查询订单', 'es': 'Buscar pedido'},
+    'lookupHint': {
+      'en': 'Use the order number and email you entered at checkout.',
+      'zh': '填写订单号和下单时使用的邮箱。',
+      'es': 'Usa el número y el correo del pedido.',
+    },
+    'save': {'en': 'Save item', 'zh': '收藏商品', 'es': 'Guardar producto'},
+    'unsave': {
+      'en': 'Remove saved item',
+      'zh': '取消收藏',
+      'es': 'Quitar favorito',
+    },
+    'remove': {'en': 'Remove item', 'zh': '移除商品', 'es': 'Quitar producto'},
+    'decrease': {
+      'en': 'Decrease quantity',
+      'zh': '减少数量',
+      'es': 'Reducir cantidad',
+    },
+    'increase': {
+      'en': 'Increase quantity',
+      'zh': '增加数量',
+      'es': 'Aumentar cantidad',
+    },
+    'language': {'en': 'Language', 'zh': '语言', 'es': 'Idioma'},
+    'back': {'en': 'Back', 'zh': '返回', 'es': 'Volver'},
+    'payment_pending': {
+      'en': 'Awaiting payment',
+      'zh': '等待付款',
+      'es': 'Pendiente de pago',
+    },
+    'purchase': {
+      'en': 'Preparing your order',
+      'zh': '采购准备中',
+      'es': 'Preparando pedido',
+    },
+    'packing': {'en': 'Packing', 'zh': '打包中', 'es': 'Empaquetando'},
+    'handoff': {
+      'en': 'Handed to carrier',
+      'zh': '已交接承运商',
+      'es': 'Entregado al transportista',
+    },
+    'transit': {'en': 'On the way', 'zh': '运输途中', 'es': 'En tránsito'},
+    'delivered': {'en': 'Delivered', 'zh': '已送达', 'es': 'Entregado'},
+  };
+}

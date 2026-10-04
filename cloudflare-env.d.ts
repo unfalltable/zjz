@@ -4,5 +4,7 @@ declare namespace Cloudflare {
     BUCKET?: R2Bucket;
     STORE_OWNER_ID?: string;
     PAYMENTS_ENABLED?: string;
+    STOREFRONT_URL?: string;
+    APP_SURFACE?: "web" | "admin";
   }
 }

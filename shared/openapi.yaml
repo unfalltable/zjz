@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: MIOVA Commerce API
+  version: 1.0.0
+  description: Guest storefront API. Prices are server-authoritative; payment is disabled. Browser calls require same origin.
+paths:
+  /api/v1/catalog:
+    get:
+      operationId: getCatalog
+      responses:
+        '200':
+          description: USD product catalogue, locales, destinations and disabled payment availability.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, apiVersion, currency, locales, destinations, products, payments]
+                properties:
+                  ok: {const: true}
+                  apiVersion: {const: v1}
+                  currency: {const: USD}
+                  locales: {type: array, items: {enum: [en, zh, es]}}
+                  destinations: {type: object, additionalProperties: {$ref: '#/components/schemas/LocalizedText'}}
+                  products: {type: array, items: {$ref: '#/components/schemas/Product'}}
+                  payments:
+                    type: object
+                    properties:
+                      enabled: {const: false}
+                      code: {const: merchant_verification_required}
+                      message: {type: string}
+  /api/v1/orders:
+    post:
+      operationId: savePendingOrder
+      description: Guest checkout; persist a pending order. Same idempotency key returns the original order. No payment is initiated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Checkout'}
+      responses:
+        '200':
+          description: New or existing pending order receipt.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, orderNumber, paymentStatus, routeModes, totalCents]
+                properties:
+                  ok: {const: true}
+                  orderNumber: {type: string, pattern: '^MW-\d{5,8}$'}
+                  paymentStatus: {const: pending}
+                  totalCents: {type: integer, minimum: 0}
+                  routeModes: {type: array, items: {$ref: '#/components/schemas/FulfillmentMode'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/orders/track:
+    post:
+      operationId: trackOrder
+      description: Match order number plus checkout email. Email is in the request body, never a URL. Does not return address, email, telephone or customer name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderNumber, email]
+              properties:
+                orderNumber: {type: string, pattern: '^MW-\d{5,8}$'}
+                email: {type: string, format: email, maxLength: 254}
+      responses:
+        '200':
+          description: Public order status without recipient PII.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {const: true}
+                  order:
+                    type: object
+                    properties:
+                      orderNumber: {type: string}
+                      productName: {type: string}
+                      amountCents: {type: integer}
+                      currency: {type: string}
+                      deliveryMethod: {enum: [standard, express, priority]}
+                      paymentStatus: {enum: [pending, paid, failed, refunded]}
+                      status: {enum: [payment_pending, purchase, packing, handoff, transit, delivered]}
+                      progress: {type: integer, minimum: 0, maximum: 100}
+                      routeModes: {type: array, items: {$ref: '#/components/schemas/FulfillmentMode'}}
+                      createdAt: {type: string, format: date-time}
+                      updatedAt: {type: string, format: date-time}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+components:
+  responses:
+    Error:
+      description: Failed validation, unavailable service or request rejected. Body is at most 32 KiB.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, message]
+            properties:
+              ok: {const: false}
+              message: {type: string}
+  schemas:
+    FulfillmentMode: {enum: [marketplace, self, supplier]}
+    LocalizedText:
+      type: object
+      required: [en, zh, es]
+      properties:
+        en: {type: string}
+        zh: {type: string}
+        es: {type: string}
+    Product:
+      type: object
+      required: [id, sku, name, priceCents, inventory, category, image, badge, description, detail]
+      properties:
+        id: {type: string}
+        sku: {type: string}
+        name: {type: string}
+        priceCents: {type: integer, minimum: 0}
+        compareAtCents: {type: [integer, 'null']}
+        price: {type: number, description: Compatibility display value; clients should use priceCents.}
+        compareAt: {type: [number, 'null']}
+        rating: {type: number}
+        reviews: {type: integer}
+        color: {enum: [blue, ice, coral]}
+        inventory: {type: integer, minimum: 0}
+        category: {enum: [home, tech, wear]}
+        image: {type: string}
+        fulfillmentMode: {$ref: '#/components/schemas/FulfillmentMode'}
+        badge: {$ref: '#/components/schemas/LocalizedText'}
+        description: {$ref: '#/components/schemas/LocalizedText'}
+        detail: {$ref: '#/components/schemas/LocalizedText'}
+    Checkout:
+      type: object
+      required: [idempotencyKey, email, firstName, lastName, address, apartment, city, region, postal, phone, destination, deliveryMethod, marketingOptIn, website, items]
+      properties:
+        idempotencyKey: {type: string, format: uuid}
+        email: {type: string, format: email, maxLength: 254}
+        firstName: {type: string, minLength: 1, maxLength: 80}
+        lastName: {type: string, minLength: 1, maxLength: 80}
+        address: {type: string, minLength: 3, maxLength: 180}
+        apartment: {type: string, maxLength: 80}
+        city: {type: string, minLength: 1, maxLength: 100}
+        region: {type: string, maxLength: 100}
+        postal: {type: string, minLength: 3, maxLength: 20}
+        phone: {type: string, minLength: 7, maxLength: 30}
+        destination: {enum: [US, CA, GB, DE, AU, FR]}
+        deliveryMethod: {enum: [standard, express, priority]}
+        marketingOptIn: {type: boolean}
+        website: {const: ''}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: Product IDs must be unique; client cannot set prices or fulfillment modes.
+          items:
+            type: object
+            required: [id, quantity]
+            properties:
+              id: {type: string, minLength: 1, maxLength: 64}
+              quantity: {type: integer, minimum: 1, maximum: 10}

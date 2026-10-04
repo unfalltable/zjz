@@ -1,126 +1,68 @@
-# vinext-starter
+# MIOVA 妙物
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+面向海外消费者的跨境购物项目。按已确认的方案：Web 商城保留 React / Vinext，App 使用 Flutter，后台独立目录，共用服务端商品与订单逻辑。支付暂缓，不收款、不假装支付成功。
 
-## Prerequisites
+## 目录
 
-- Node.js `>=22.13.0`
-- Portable: Windows, macOS, or Linux; no Bash required
-- Managed Linux: managed Linux runtime with Bash, `flock`, `curl`, `sha256sum`, and GNU `timeout`
-- Git is required only for publishing
-
-## Sites Lifecycle
-
-The Sites initializer copies the shared starter and selects managed-linux only when `SITES_MANAGED_LINUX_CONTAINER=1`; otherwise it selects portable. It saves the selection only in ignored `.sites-runtime/execution-profile.json`. Both profiles copy/configure first, then use the plugin's separate `install-dependencies.mjs` step to measure installation independently. Edit source under `app/` and follow the Sites skill for installation, preview, builds, and publishing.
-
-Run `node <plugin-root>/scripts/configure-execution-profile.mjs` only when the profile is unknown for the current checkout and environment. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
-
-This starter does not use `wrangler.jsonc`.
-
-`install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
-
-- **Portable:** Preserve host HOME, npm cache, registry, proxy, temporary paths, retry/concurrency settings, and lifecycle-script policy. Use `--prefer-offline --no-audit --no-fund`.
-- **Managed Linux:** Use the existing project-local HOME/cache/tmp setup and Linux install lock, tarball preflight, and timeout. Restore the image-seeded npm cache only when its lockfile hash matches; retain network fallback. Builds keep their existing timeout. These helpers are not invoked by the portable profile.
-
-`scripts/sites-env.mjs` preserves the caller's HOME, npm cache, proxy, XDG, and temporary-directory configuration while defaulting Wrangler and Miniflare state to the checkout. If npm reports an unwritable cache, select a writable path with `npm_config_cache` for that install. The `dev` and `start` scripts also keep Wrangler logs inside the checkout. Generated `.sites-runtime/` and `.wrangler/` directories are disposable and ignored by Git.
-
-On portable, `npm run dev` uses `vinext dev` with HMR, starting at port 5173. Vinext records the running server in ignored `.vinext/` state, rejects an ordinary duplicate launch, and recovers stale state after a stopped process; exactly simultaneous starts can race. Pass `--port <port>` or `--hostname <host>` after `npm run dev --` when needed; keep portable previews on loopback.
-
-For browser QA on managed Linux, use `sites-preview start`. The project's dev script runs Vite and accepts the supervisor's `--host 0.0.0.0 --port 4173 --strictPort` arguments. The internal browser uses `http://terminal.local:4173/`; it is not a user-facing URL. The supervisor owns the preview lifecycle. The ignored local profile survives the supervisor's cleared process environment.
-
-The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
-
-The Worker uses `vinext/server/fetch-handler`, including Vinext's config-aware image handling. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
-
-Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
-
-Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
-
-## Included Shape
-
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `@cloudflare/workers-types` provides Worker types; `cloudflare-env.d.ts` declares optional `DB`/`BUCKET` bindings—update these declarations if binding names change
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Use it as the durable user key; use email and name for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+hatchway/
+├── web/       Web 商城、Web 路由、UI 组件、静态商品资源
+├── app/       Flutter 客户端（Android / iOS / 桌面 / Web 预览入口）
+├── admin/     管理后台，独立开发和构建入口
+├── backend/   服务端业务、HTTP API、数据库、认证、支付接口、迁移
+├── shared/    共享商品模型、履约类型、接口契约
+├── scripts/   仓库级运行、构建与检查脚本
+└── .openai/   现有站点托管配置
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+`web/app/` 是 Next 风格路由目录；根目录 `app/` 才是 Flutter 工程。Node 依赖统一在仓库根目录安装，Flutter 单独管理 Dart 依赖，两个锁文件都应提交。
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
+## 分支与现有功能
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use the returned `userId` as the stable user key for user-owned records; do not use email as a durable identifier.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
+改造前只有 `main`，没有独立 Web/App/后台功能分支。GitHub 的 `origin/main` 是同一条主线，`sites` 是旧网站源码远端，不是另一套产品。历史上的七个提交包含原型迭代，不应当成七个功能分支。
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
+| 模块 | 当前已实现 | 尚未完成 |
+| --- | --- | --- |
+| Web 商城 | 英/中/西语言、搜索、分类、排序、商品详情、收藏、购物袋、配送国家 | 商品目前仅 3 个示例 SKU，完整商用商品中心与 SEO 内容仍待完善 |
+| 下单 | 地址校验、配送选择、服务端计价、D1 持久化、幂等保存待付款订单 | 实际收款、退款、税费规则、可靠库存预占 |
+| 订单查询 | 订单号 + 下单邮箱查询真实数据库记录 | 实际承运商轨迹同步、客户账户与更强订单访问验证 |
+| 后台 | 店主登录校验、订单列表、状态变更、库存增加、三种履约路线展示 | 采购/供应商/货代自动派单、完整 RBAC、审计、售后 |
+| Flutter App | 英/中/西语言、商品目录、详情、收藏、购物袋、待付款下单、订单查询；本地偏好与购物袋草稿 | 原生工具链验证、商店签名/上架、推送、正式客户登录 |
+| 平台连接 | 已留业务层与版本化 HTTP 接口 | PDD、物流、供应商、支付等真实外部接入尚未完成 |
 
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
+三种履约方式已在订单模型中区分：国内平台卖家发货、自有打包发货、供应商发货。这不等于已经调用真实供应商或物流服务。
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+## Web / 后台启动
 
-## Local D1 migrations
-
-For a D1-backed local preview, generate SQL with `npm run db:generate`. Build once through the Sites skill's build entrypoint (or `npm run build` for standalone use) to generate `dist/server/wrangler.json`, rebuilding if bindings change. From the project root, apply each pending migration in order:
+要求 Node.js >= 22.13。所有 Node 命令在本目录执行：
 
 ```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_example.sql
+npm ci
+npm run dev:web       # http://localhost:5173
+npm run dev:admin     # http://localhost:5174（另一个终端）
+npm run typecheck
+npm run build:web
+npm run build:admin
 ```
 
-Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
+`npm run dev` 与 `npm run build` 仍默认指向 Web，`npm run start` 使用根目录的 Worker 构建输出。`/ops` 保留旧入口，实际后台源码位于 `admin/`。
 
-## Diagnostic Commands
+本地分别在 `web/.dev.vars`、`admin/.dev.vars` 配置 `.env.example` 的变量。若要测试本地模拟登录，店主 ID 使用 `local_seedy`；生产继续使用该站点的真实店主身份 ID。所有 `.dev.vars` 均忽略提交。
 
-- `npm run install:ci`: perform the one locked dependency install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: preview the built Worker locally with D1/R2 support
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+两个本地开发服务共享仓库根目录 `.wrangler/state` 的 D1 开发数据。`npm run test:api` 只允许访问本机，会创建一条测试待付款订单，不会支付、发货或访问生产库。
 
-When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
+## Flutter
 
-The portable build runs Vinext directly without a host `timeout` command. The managed-linux build uses `scripts/build-verified.sh` and its existing `SITES_BUILD_TIMEOUT` setting.
+已使用 Flutter stable 3.47.6 / Dart 3.13.5 创建多平台工程。运行、测试、平台准备见 `app/README.md`。Flutter 与 Web 使用同一个 `/api/v1`，不直接访问数据库，不内置商家秘密。
 
-## Learn More
+架构为：界面 → `StoreModel` → `CommerceApi` → 服务端业务 / D1。状态、数据请求与界面分开，遵循 [Flutter 官方架构建议](https://docs.flutter.dev/app-architecture/recommendations)。
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+## 支付和正式上线边界
+
+支付始终关闭。保存订单是 `pending` / `payment_pending`，不会扣款，不会允许后台推进未付款订单发货。资质齐备后需单独实现支付供应商、验签回调和对账，不能靠改一个开关上线。
+
+本次是多端结构改造与客户端基础，不代表已达到商用验收。正式上线仍需统一数据库商品/库存（目前后台库存与静态商城目录有差异）、完善客户认证、反滥用与限流、数据保护、真实履约连接、售后、监控与原生端发布验证。
+
+数据库迁移移动到 `backend/drizzle/`，已有 SQL 和元数据内容不变。新增表结构时追加迁移，不改已应用的历史文件。
+
+现有站点托管配置保留。本轮当前 Sites 账号无法找到该站点，因而没有进行线上发布；本地构建成功不等于线上地址已更新。
