@@ -3,8 +3,10 @@
 import { access, cp, mkdir, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
+const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const localUserId = "local_seedy";
 const localEmail = "seedy@sites.test";
 const localFullName = "Seedy";
@@ -174,8 +176,8 @@ export function sites({ mockAuth = true } = {}): Plugin {
       if (command !== "build") return;
 
       const outputDirectory = resolve(root, "dist", ".openai");
-      const hostingConfig = resolve(root, "..", ".openai", "hosting.json");
-      const drizzleSource = resolve(root, "..", "backend", "drizzle");
+      const hostingConfig = resolve(repositoryRoot, ".openai", "hosting.json");
+      const drizzleSource = resolve(repositoryRoot, "backend", "sql");
 
       await rm(outputDirectory, { recursive: true, force: true });
       await mkdir(outputDirectory, { recursive: true });

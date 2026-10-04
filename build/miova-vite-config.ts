@@ -19,9 +19,9 @@ export async function createMiovaConfig(surface: "web" | "admin"): Promise<UserC
   return {
     publicDir: path.join(repositoryRoot, "web", "public"),
     resolve: { alias: {
-      "@backend": path.join(repositoryRoot, "backend"),
+      "@backend": path.join(repositoryRoot, "backend", "api"),
       "@shared": path.join(repositoryRoot, "shared"),
-      "@admin": path.join(repositoryRoot, "admin"),
+      "@admin": path.join(repositoryRoot, "backend", "backend_web"),
       "@": path.join(repositoryRoot, "web"),
     } },
     server: {

@@ -10,7 +10,7 @@ const surfaceIndex = args.indexOf("--surface");
 const surface = surfaceIndex >= 0 ? args.splice(surfaceIndex, 2)[1] : "web";
 if (!["web", "admin"].includes(surface)) throw new Error("Expected web or admin surface.");
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const surfaceRoot = path.join(repositoryRoot, surface);
+const surfaceRoot = path.join(repositoryRoot, surface === "admin" ? "backend/backend_web" : "web");
 const managedLinux = readExecutionProfile() === "managed-linux";
 const cli = new URL(managedLinux
   ? "../node_modules/vite/bin/vite.js"

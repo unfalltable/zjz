@@ -23,9 +23,9 @@
       }
     ],
     "paths": {
-      "@backend/*": ["./backend/*"],
+      "@backend/*": ["./backend/api/*"],
       "@shared/*": ["./shared/*"],
-      "@admin/*": ["./admin/*"],
+      "@admin/*": ["./backend/backend_web/*"],
       "@/*": [
         "./web/*"
       ]
@@ -45,6 +45,6 @@
   ],
   "exclude": [
     "node_modules",
-    "examples", "app", "dist", "web/dist", "admin/dist"
+    "examples", "app", "dist", "web/dist", "backend/backend_web/dist"
   ]
 }

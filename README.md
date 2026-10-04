@@ -1,6 +1,6 @@
 # MIOVA 妙物
 
-面向海外消费者的跨境购物项目。按已确认的方案：Web 商城保留 React / Vinext，App 使用 Flutter，后台独立目录，共用服务端商品与订单逻辑。支付暂缓，不收款、不假装支付成功。
+面向海外消费者的跨境购物项目。按已确认的方案：Web 商城保留 React / Vinext，App 使用 Flutter，服务端代码与管理页面统一放在 `backend/`，共用商品与订单逻辑。支付暂缓，不收款、不假装支付成功。
 
 ## 目录
 
@@ -8,8 +8,10 @@
 hatchway/
 ├── web/       Web 商城、Web 路由、UI 组件、静态商品资源
 ├── app/       Flutter 客户端（Android / iOS / 桌面 / Web 预览入口）
-├── admin/     管理后台，独立开发和构建入口
-├── backend/   服务端业务、HTTP API、数据库、认证、支付接口、迁移
+├── backend/   后端
+│   ├── sql/          数据库建表与迁移 SQL、迁移元数据
+│   ├── api/          接口、业务逻辑、数据库访问、认证、支付接口
+│   └── backend_web/  管理后台页面，独立开发和构建入口
 ├── shared/    共享商品模型、履约类型、接口契约
 ├── scripts/   仓库级运行、构建与检查脚本
 └── .openai/   现有站点托管配置
@@ -45,9 +47,9 @@ npm run build:web
 npm run build:admin
 ```
 
-`npm run dev` 与 `npm run build` 仍默认指向 Web，`npm run start` 使用根目录的 Worker 构建输出。`/ops` 保留旧入口，实际后台源码位于 `admin/`。
+`npm run dev` 与 `npm run build` 仍默认指向 Web，`npm run start` 使用根目录的 Worker 构建输出。`/ops` 保留旧入口，实际后台源码位于 `backend/backend_web/`。原有 `dev:admin` / `build:admin` 命令名保留，执行路径已指向新目录。
 
-本地分别在 `web/.dev.vars`、`admin/.dev.vars` 配置 `.env.example` 的变量。若要测试本地模拟登录，店主 ID 使用 `local_seedy`；生产继续使用该站点的真实店主身份 ID。所有 `.dev.vars` 均忽略提交。
+本地分别在 `web/.dev.vars`、`backend/backend_web/.dev.vars` 配置 `.env.example` 的变量。若要测试本地模拟登录，店主 ID 使用 `local_seedy`；生产继续使用该站点的真实店主身份 ID。所有 `.dev.vars` 均忽略提交。
 
 两个本地开发服务共享仓库根目录 `.wrangler/state` 的 D1 开发数据。`npm run test:api` 只允许访问本机，会创建一条测试待付款订单，不会支付、发货或访问生产库。
 
@@ -63,6 +65,6 @@ npm run build:admin
 
 本次是多端结构改造与客户端基础，不代表已达到商用验收。正式上线仍需统一数据库商品/库存（目前后台库存与静态商城目录有差异）、完善客户认证、反滥用与限流、数据保护、真实履约连接、售后、监控与原生端发布验证。
 
-数据库迁移移动到 `backend/drizzle/`，已有 SQL 和元数据内容不变。新增表结构时追加迁移，不改已应用的历史文件。
+数据库建表与迁移文件位于 `backend/sql/`，已有 SQL 和元数据内容不变。数据库访问代码与 Drizzle 表结构定义位于 `backend/api/db/`。新增表结构时追加迁移，不改已应用的历史文件。
 
 现有站点托管配置保留。本轮当前 Sites 账号无法找到该站点，因而没有进行线上发布；本地构建成功不等于线上地址已更新。

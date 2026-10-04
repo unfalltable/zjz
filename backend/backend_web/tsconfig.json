@@ -1,0 +1,12 @@
+{
+  "extends": "../../web/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../../web/*"],
+      "@backend/*": ["../api/*"],
+      "@shared/*": ["../../shared/*"],
+      "@admin/*": ["./*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../api/**/*.ts", "../../shared/**/*.ts", "../../cloudflare-env.d.ts"]
+}

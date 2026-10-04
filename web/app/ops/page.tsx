@@ -1,3 +1,3 @@
-// Compatibility route: administration source lives in admin/, not the store.
+// Compatibility route: administration source lives in backend/backend_web/.
 export { default } from "@admin/app/page";
 export const dynamic = "force-dynamic";

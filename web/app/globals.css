@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 @source "../components";
-@source "../../admin";
+@source "../../backend/backend_web";
 
 :root {
   --ink: #10143a;

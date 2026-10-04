@@ -1,7 +1,0 @@
-{
-  "name": "@miova/admin",
-  "private": true,
-  "type": "module",
-  "scripts": { "dev": "node ../scripts/run-framework.mjs dev --surface admin", "build": "node ../scripts/run-framework.mjs build --surface admin" },
-  "dependencies": { "react": "19.2.6", "react-dom": "19.2.6" }
-}

@@ -3,10 +3,10 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./*"],
-      "@backend/*": ["../backend/*"],
+      "@backend/*": ["../backend/api/*"],
       "@shared/*": ["../shared/*"],
-      "@admin/*": ["../admin/*"]
+      "@admin/*": ["../backend/backend_web/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", "../backend/**/*.ts", "../shared/**/*.ts", "../admin/**/*.tsx", "../cloudflare-env.d.ts"]
+  "include": ["**/*.ts", "**/*.tsx", "../backend/api/**/*.ts", "../backend/backend_web/**/*.ts", "../backend/backend_web/**/*.tsx", "../shared/**/*.ts", "../cloudflare-env.d.ts"]
 }

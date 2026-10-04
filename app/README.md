@@ -24,7 +24,7 @@ flutter run -d android --dart-define=MIOVA_API_BASE_URL=http://10.0.2.2:5173
 
 `-d` 应替换成 `flutter devices` 中的真实设备 ID。`10.0.2.2` 仅适用于 Android 模拟器；真实设备使用可达的 HTTPS 测试地址。原生端不设置 `MIOVA_API_BASE_URL` 时会显示配置提示，不会请求一个不存在的生产 API。
 
-Android 模拟器调试时，用 `npm run dev:web -- --host 127.0.0.1` 启动 API，确保监听 IPv4；默认 `localhost` 在部分 Windows 环境只监听 IPv6，模拟器无法连接。
+Android 模拟器调试时，用 `npm run dev:web -- --hostname 127.0.0.1` 启动 API，确保监听 IPv4；默认 `localhost` 在部分 Windows 环境只监听 IPv6，模拟器无法连接。`--hostname` 是当前 Vinext 的参数名，不要使用 Vite 的 `--host`。
 
 生产包必须指定已部署、提供 `/api/v1` 的 HTTPS API，例如：
 

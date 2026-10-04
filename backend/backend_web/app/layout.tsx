@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "../../web/app/globals.css";
+import "../../../web/app/globals.css";
 
 export const metadata: Metadata = {
   title: "MIOVA 妙物 · 管理后台",
