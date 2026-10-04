@@ -3,9 +3,6 @@
 
 
 
-
-
-
 const { OAuth2Client } = require('google-auth-library');
 const appleSignin = require('apple-signin-auth');
 
@@ -117,6 +114,18 @@ app.get('/api/account/google/callback', async (req, res) => {
 
         //登录或者注册
 
+
+
+        // res.json({
+        //     success: true,
+        //     message: 'Apple App 登录成功',
+        //     data: {
+        //         apple_id: appleUser.sub,
+        //         email: appleUser.email || null,
+        //         email_verified: appleUser.email_verified || false
+        //     }
+        // });
+
     } catch (error) {
 
         console.error('==============================');
@@ -177,6 +186,20 @@ app.post('/api/account/google/app', async (req, res) => {
         console.log('姓氏:', payload.family_name);
         console.log('头像:', payload.picture);
         console.log('语言:', payload.locale);
+
+        //登录或者注册
+
+
+
+        // res.json({
+        //     success: true,
+        //     message: 'Apple App 登录成功',
+        //     data: {
+        //         apple_id: appleUser.sub,
+        //         email: appleUser.email || null,
+        //         email_verified: appleUser.email_verified || false
+        //     }
+        // });
 
         
 
@@ -294,6 +317,15 @@ app.post('/api/account/apple/callback', async (req, res) => {
         
 
 
+        // res.json({
+        //     success: true,
+        //     message: 'Apple App 登录成功',
+        //     data: {
+        //         apple_id: appleUser.sub,
+        //         email: appleUser.email || null,
+        //         email_verified: appleUser.email_verified || false
+        //     }
+        // });
 
 
     } catch (error) {
@@ -303,6 +335,100 @@ app.post('/api/account/apple/callback', async (req, res) => {
         res.status(401).json({
             success: false,
             message: 'Apple 登录失败',
+            error: error.message
+        });
+
+    }
+
+});
+
+
+//apple账号的app端应用的登录注册
+
+app.post('/api/account/apple/app', async (req, res) => {
+
+    console.log('==============================');
+    console.log('App Apple 登录请求');
+    console.log('==============================');
+
+    console.log('App 返回的数据:');
+    console.log(req.body);
+
+    try {
+
+        // App 传过来的 Apple identityToken
+        const {
+            identityToken,
+            authorizationCode,
+            user,
+            email
+        } = req.body;
+
+        // 检查 identityToken
+        if (!identityToken) {
+
+            return res.status(400).json({
+                success: false,
+                message: '缺少 Apple identityToken'
+            });
+
+        }
+
+        console.log('Apple identityToken:');
+        console.log(identityToken);
+
+        console.log('Apple authorizationCode:');
+        console.log(authorizationCode);
+
+        console.log('App 返回的 Apple user:');
+        console.log(user);
+
+        console.log('App 返回的 email:');
+        console.log(email);
+
+        // 验证 Apple identityToken
+        const appleUser = await appleSignin.verifyIdToken(
+            identityToken,
+            {
+                audience: APPLE_CLIENT_ID
+            }
+        );
+
+        console.log('==============================');
+        console.log('Apple 用户详细信息');
+        console.log('==============================');
+
+        console.log('Apple 用户 ID:', appleUser.sub);
+        console.log('邮箱:', appleUser.email);
+        console.log('邮箱是否验证:', appleUser.email_verified);
+        console.log('==============================');
+
+        // 注册或者登录
+
+        //使用App 传过来的邮箱
+        
+
+
+        // res.json({
+        //     success: true,
+        //     message: 'Apple App 登录成功',
+        //     data: {
+        //         apple_id: appleUser.sub,
+        //         email: appleUser.email || null,
+        //         email_verified: appleUser.email_verified || false
+        //     }
+        // });
+
+    } catch (error) {
+
+        console.error('==============================');
+        console.error('Apple App 登录验证失败');
+        console.error(error);
+        console.error('==============================');
+
+        res.status(401).json({
+            success: false,
+            message: 'Apple App 登录失败',
             error: error.message
         });
 
@@ -322,10 +448,13 @@ app.post('/api/account/apple/callback', async (req, res) => {
 
 
 
-
 app.listen(3000, () => {
 
     console.log('用户账号 API 已启动');
     console.log('端口: 3000');
 
 });   
+
+
+
+
