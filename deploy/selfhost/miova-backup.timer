@@ -1,0 +1,11 @@
+[Unit]
+Description=Miova daily database backup schedule
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=miova-backup.service
+
+[Install]
+WantedBy=timers.target

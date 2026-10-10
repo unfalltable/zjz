@@ -1,0 +1,12 @@
+[Unit]
+Description=Miova short-lived IP TLS certificate renewal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/miova-certbot/bin/certbot renew --non-interactive --config-dir /etc/miova/letsencrypt --work-dir /var/lib/miova-acme --logs-dir /var/log/miova-acme --deploy-hook "/usr/bin/bash /srv/miova/current/scripts/selfhost/reload-nginx.sh"
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+TimeoutStartSec=300

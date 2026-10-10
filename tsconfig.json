@@ -46,6 +46,6 @@
   ],
   "exclude": [
     "node_modules",
-    "examples", "app", "dist", "web/dist", "backend/backend_web/dist"
+    "examples", "app", "dist", "web/dist", "backend/backend_web/dist", "web/dist-node", "backend/backend_web/dist-node"
   ]
 }

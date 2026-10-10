@@ -108,6 +108,7 @@ type OpsDashboardProps = {
   user: { displayName: string; email: string; signOutPath: string } | null;
   signInPath: string;
   storefrontUrl: string | null;
+  selfhostAuth?: boolean;
 };
 
 const copy = {
@@ -128,6 +129,9 @@ const copy = {
     unavailable: "Saved data is temporarily unavailable. No demo orders are shown; changes are disabled.",
     signIn: "Sign in to manage",
     signOut: "Sign out",
+    selfhostLocked: "Private administration",
+    selfhostLoginHelp: "Open the SSH tunnel, then sign in through the private administrator address.",
+    selfhostSignOutHelp: "To sign out, close all private browsing windows for this session and disconnect the SSH tunnel. Closing one tab does not clear cached credentials.",
     revenue: "Paid open order value (USD)",
     openOrders: "Open orders",
     available: "Available stock",
@@ -186,6 +190,9 @@ const copy = {
     unavailable: "数据暂不可用，不显示演示订单，修改操作已禁用。",
     signIn: "登录并管理",
     signOut: "退出登录",
+    selfhostLocked: "私有管理入口",
+    selfhostLoginHelp: "请先建立 SSH 隧道，再通过私有后台地址登录。",
+    selfhostSignOutHelp: "退出时关闭本次会话的所有隐私浏览窗口，并断开 SSH 隧道。只关闭一个标签页不会清除登录缓存。",
     revenue: "已付款进行中金额（USD）",
     openOrders: "进行中订单",
     available: "可用库存",
@@ -277,6 +284,7 @@ export function OpsDashboard({
   user,
   signInPath,
   storefrontUrl,
+  selfhostAuth = false,
 }: OpsDashboardProps) {
   const locale = useSyncExternalStore(subscribeOpsLocale, readOpsLocale, () => "en" as Locale);
   const [tab, setTab] = useState("orders");
@@ -390,10 +398,18 @@ export function OpsDashboard({
                 <strong>{user.displayName}</strong>
                 <small>{user.email}</small>
               </div>
-              <a className="ops-auth-link" href={user.signOutPath} target="_top">
-                <LogOut aria-hidden="true" /> {t.signOut}
-              </a>
+              {selfhostAuth ? (
+                <div className="ops-user"><small>{t.selfhostSignOutHelp}</small></div>
+              ) : (
+                <a className="ops-auth-link" href={user.signOutPath} target="_top">
+                  <LogOut aria-hidden="true" /> {t.signOut}
+                </a>
+              )}
             </>
+          ) : selfhostAuth ? (
+            <div className="ops-user">
+              <strong>{t.selfhostLocked}</strong><small>{t.selfhostLoginHelp}</small>
+            </div>
           ) : (
             <a className="ops-auth-link ops-auth-primary" href={signInPath} target="_top">
               <LogIn aria-hidden="true" /> {t.signIn}
@@ -434,8 +450,8 @@ export function OpsDashboard({
           )}
           {!user && (
             <div className="ops-demo-banner">
-              <div><PanelsTopLeft aria-hidden="true" /><span>{t.demoBody}</span></div>
-              <a href={signInPath} target="_top">{t.signIn}<ArrowUpRight aria-hidden="true" /></a>
+              <div><PanelsTopLeft aria-hidden="true" /><span>{selfhostAuth ? t.selfhostLoginHelp : t.demoBody}</span></div>
+              {!selfhostAuth && <a href={signInPath} target="_top">{t.signIn}<ArrowUpRight aria-hidden="true" /></a>}
             </div>
           )}
 

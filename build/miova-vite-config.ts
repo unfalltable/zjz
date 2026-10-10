@@ -15,6 +15,32 @@ export async function createMiovaConfig(surface: "web" | "admin"): Promise<UserC
   process.env.WRANGLER_REGISTRY_PATH ??= ".wrangler/dev-registry";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
   const managedLinux = readExecutionProfile() === "managed-linux";
+  if (process.env.MIOVA_RUNTIME === "node") {
+    return {
+      publicDir: path.join(repositoryRoot, "web", "public"),
+      resolve: { tsconfigPaths: false, alias: {
+        "cloudflare:workers": path.join(repositoryRoot, "backend/api/runtime/selfhost/env.mjs"),
+        "@backend/auth": path.join(repositoryRoot, "backend/api/runtime/selfhost/auth.ts"),
+        "@backend": path.join(repositoryRoot, "backend/api"),
+        "@shared": path.join(repositoryRoot, "shared"),
+        "@admin": path.join(repositoryRoot, "backend/backend_web"),
+        "@": path.join(repositoryRoot, "web"),
+      } },
+      server: { fs: { allow: [repositoryRoot] } },
+      // The existing Sites/Worker target remains unchanged below.
+      plugins: [vinext(), {
+        name: "miova-node-runtime-aliases",
+        enforce: "post",
+        // Vinext prepends the broad tsconfig @backend alias. Re-prepend exact
+        // runtime aliases after its config hook; native tsconfig resolution is
+        // disabled too, so a public Node build cannot silently use Sites auth.
+        config: () => ({ resolve: { tsconfigPaths: false, alias: [
+          { find: /^@backend\/auth$/, replacement: path.join(repositoryRoot, "backend/api/runtime/selfhost/auth.ts") },
+          { find: /^cloudflare:workers$/, replacement: path.join(repositoryRoot, "backend/api/runtime/selfhost/env.mjs") },
+        ] } }),
+      }],
+    };
+  }
   const { cloudflare } = await import("@cloudflare/vite-plugin");
   return {
     publicDir: path.join(repositoryRoot, "web", "public"),

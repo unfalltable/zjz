@@ -1,0 +1,28 @@
+[Unit]
+Description=Miova consistent SQLite backup
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=miova
+Group=miova
+WorkingDirectory=/srv/miova/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/miova/web.env
+ExecStart=/usr/bin/node /srv/miova/current/scripts/selfhost/backup.mjs --database /srv/miova/data/commerce.sqlite --directory /srv/miova/data/backups
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/miova/data
+MemoryMax=256M
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=miova-backup

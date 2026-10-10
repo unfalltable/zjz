@@ -1,0 +1,43 @@
+[Unit]
+Description=Miova private administration (Node production runtime)
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=miova
+Group=miova
+WorkingDirectory=/srv/miova/current
+Environment=NODE_ENV=production
+Environment=MIOVA_RUNTIME=node
+Environment=APP_SURFACE=admin
+Environment=HOST=127.0.0.1
+Environment=PORT=3101
+EnvironmentFile=/etc/miova/admin.env
+ExecStart=/usr/bin/node /srv/miova/current/scripts/selfhost/start.mjs --surface admin
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/miova
+ReadWritePaths=/srv/miova/data
+MemoryMax=512M
+TasksMax=128
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=miova-admin
+
+[Install]
+WantedBy=multi-user.target

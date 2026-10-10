@@ -46,6 +46,7 @@ export default async function OpsPage() {
           : null
       }
       signInPath={chatGPTSignInPath("/ops")}
+      selfhostAuth={runtime.MIOVA_RUNTIME === "node"}
     />
   );
 }
