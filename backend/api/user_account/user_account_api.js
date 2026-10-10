@@ -4727,11 +4727,17 @@ app.post('/api/account/token/refresh', async (req, res) => {
 // 退出登录
 // ==============================
 
+// ==============================
+// 退出登录
+// ==============================
+
 app.post('/api/account/logout', async (req, res) => {
 
     try {
 
-        const { token } = req.body;
+        // 优先获取 App 通过 body 发送的 Token
+        // 如果没有，则获取网站浏览器自动发送的 Cookie
+        const token = req.body?.token || req.cookies?.token;
 
         if (!token) {
             return res.status(400).json({
@@ -4746,6 +4752,14 @@ app.post('/api/account/logout', async (req, res) => {
         // 删除 Token
         await redisClient.del(redisKey);
 
+        // 清除网站登录 Cookie
+        res.clearCookie('token', {
+            httpOnly: true,
+            secure: false,
+            sameSite: 'lax',
+            path: '/'
+        });
+
         return res.json({
             success: true,
             message: '退出登录成功'
@@ -4753,7 +4767,7 @@ app.post('/api/account/logout', async (req, res) => {
 
     } catch (error) {
 
-
+        console.error('退出登录失败:', error);
 
         return res.status(500).json({
             success: false,
@@ -4763,6 +4777,9 @@ app.post('/api/account/logout', async (req, res) => {
     }
 
 });
+
+
+
 
 
 
