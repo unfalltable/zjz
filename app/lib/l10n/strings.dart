@@ -49,9 +49,44 @@ class Copy {
       'zh': '商城暂时无法连接',
       'es': 'Tienda no disponible',
     },
+    'loadingCatalog': {
+      'en': 'Loading current products…',
+      'zh': '正在加载最新商品…',
+      'es': 'Cargando productos actuales…',
+    },
+    'unavailableBody': {
+      'en': 'We could not check current prices and stock. Check your connection and try again.',
+      'zh': '暂时无法确认最新价格和库存，请检查网络后重试。',
+      'es': 'No pudimos consultar precios y existencias actuales. Revisa tu conexión e inténtalo de nuevo.',
+    },
+    'catalogEmpty': {
+      'en': 'No products available right now',
+      'zh': '目前暂无在售商品',
+      'es': 'No hay productos disponibles ahora',
+    },
+    'catalogEmptyBody': {
+      'en': 'Please check again later. No items have been added to your bag.',
+      'zh': '请稍后再来看看。当前没有商品加入购物袋。',
+      'es': 'Vuelve a consultar más tarde. No se han añadido productos a tu bolsa.',
+    },
+    'productUnavailable': {
+      'en': 'This product is no longer available',
+      'zh': '这件商品目前不可售',
+      'es': 'Este producto ya no está disponible',
+    },
     'subtotal': {'en': 'Subtotal', 'zh': '商品小计', 'es': 'Subtotal'},
     'shipping': {'en': 'Shipping', 'zh': '运费', 'es': 'Envío'},
     'total': {'en': 'Total', 'zh': '总计', 'es': 'Total'},
+    'taxes': {
+      'en': 'Taxes and duties',
+      'zh': '税费与关税',
+      'es': 'Impuestos y aranceles',
+    },
+    'taxNotEstimated': {
+      'en': 'Not estimated; excluded from this draft total',
+      'zh': '尚未估算，未包含在草稿总额中',
+      'es': 'Sin estimar; no incluidos en el total del borrador',
+    },
     'checkout': {'en': 'Continue to checkout', 'zh': '填写订单', 'es': 'Continuar'},
     'delivery': {
       'en': 'Delivery details',
@@ -90,9 +125,9 @@ class Copy {
       'es': 'Guardar pedido · sin pago',
     },
     'paymentNotice': {
-      'en': 'Online payment is not open yet. Saving an order does not charge you or start shipping.',
-      'zh': '在线支付尚未开放。保存订单不会扣款，也不会启动发货。',
-      'es': 'El pago aún no está disponible. Guardar un pedido no genera cargos ni envíos.',
+      'en': 'Online payment is not open yet. This is an unpaid draft: no charge, stock reservation or shipping. Prices and availability must be confirmed before payment.',
+      'zh': '在线支付尚未开放。保存的是未付款草稿，不扣款、不锁库存、不启动发货；付款前须重新确认价格和库存。',
+      'es': 'El pago aún no está disponible. Es un borrador sin pagar: sin cargos, reserva de existencias ni envío. El precio y la disponibilidad deben confirmarse antes de pagar.',
     },
     'pending': {
       'en': 'Order saved · payment pending',

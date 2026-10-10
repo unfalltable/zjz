@@ -4,35 +4,8 @@ import { env } from "cloudflare:workers";
 import { z } from "zod";
 
 import { trackStorefrontOrder } from "@backend/db/storefront";
-import type { FulfillmentMode, OrderStatus } from "@shared/ops-types";
-import type { PaymentStatus } from "@backend/payments";
-
-export type TrackActionState = {
-  kind: "idle" | "found" | "not_found" | "error";
-  message: string;
-  order: null | {
-    orderNumber: string;
-    customerName: string;
-    destination: string;
-    productName: string;
-    amountCents: number;
-    currency: string;
-    deliveryMethod: string;
-    fulfillmentMode: FulfillmentMode;
-    routeModes: FulfillmentMode[];
-    paymentStatus: PaymentStatus;
-    status: OrderStatus;
-    progress: number;
-    createdAt: string;
-    updatedAt: string;
-  };
-};
-
-export const initialTrackState: TrackActionState = {
-  kind: "idle",
-  message: "",
-  order: null,
-};
+import type { TrackActionState } from "./action-state";
+export type { TrackActionState } from "./action-state";
 
 const trackSchema = z.object({
   orderNumber: z.string().trim().toUpperCase().regex(/^MW-\d{5,8}$/),
@@ -70,7 +43,21 @@ export async function lookupOrderAction(
       };
     }
 
-    return { kind: "found", message: "Order found.", order };
+    // Explicit projection: TypeScript narrowing alone does not remove receipt PII at runtime.
+    return { kind: "found", message: "Order found.", order: {
+      orderNumber: order.orderNumber,
+      productName: order.productName,
+      amountCents: order.amountCents,
+      currency: order.currency,
+      deliveryMethod: order.deliveryMethod,
+      fulfillmentMode: order.fulfillmentMode,
+      routeModes: order.routeModes,
+      paymentStatus: order.paymentStatus,
+      status: order.status,
+      progress: order.progress,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    } };
   } catch (error) {
     console.error("Order tracking failed", error);
     return { kind: "error", message: "Tracking is temporarily unavailable. Please try again.", order: null };

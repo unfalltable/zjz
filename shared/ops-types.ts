@@ -26,6 +26,8 @@ export type OpsOrder = {
   progress: number;
   createdAt: string;
   updatedAt: string;
+  version?: number;
+  inventoryReserved?: false;
 };
 
 export type OpsProduct = {
@@ -37,9 +39,35 @@ export type OpsProduct = {
   defaultFulfillment: FulfillmentMode;
   status: "active" | "paused";
   updatedAt: string;
+  storefrontId?: string | null;
+  priceCents?: number | null;
+  compareAtCents?: number | null;
+  inventory?: number;
+  category?: "home" | "tech" | "wear" | null;
+  image?: string | null;
+  version?: number;
+  metadata?: OpsProductMetadata | null;
+};
+
+export type OpsProductMetadata = {
+  color: "blue" | "ice" | "coral";
+  badge: Record<"en" | "zh" | "es", string>;
+  description: Record<"en" | "zh" | "es", string>;
+  detail: Record<"en" | "zh" | "es", string>;
 };
 
 export type OpsSnapshot = {
   orders: OpsOrder[];
   products: OpsProduct[];
+  auditEvents?: OpsAuditEvent[];
+};
+
+export type OpsAuditEvent = {
+  id: string;
+  time: string;
+  entity: "order" | "inventory" | "catalog";
+  entityId: string;
+  action: string;
+  actorId: string;
+  details?: string;
 };

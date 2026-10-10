@@ -1,10 +1,11 @@
 // Vendored from @openai/sites-vite-plugin 0.2.0 (openai/sites#9).
 // See sites-vite-plugin.LICENSE for the upstream MIT license.
-import { access, cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
+import { bundleCommerceMigrations } from "./commerce-migration-bundle.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const localUserId = "local_seedy";
@@ -18,18 +19,6 @@ const authPaths = new Set([
   "/signout-with-chatgpt",
   "/callback",
 ]);
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-}
 
 export function sites({ mockAuth = true } = {}): Plugin {
   let root = process.cwd();
@@ -183,11 +172,8 @@ export function sites({ mockAuth = true } = {}): Plugin {
       await mkdir(outputDirectory, { recursive: true });
 
       await cp(hostingConfig, resolve(outputDirectory, "hosting.json"));
-      if (await exists(drizzleSource)) {
-        await cp(drizzleSource, resolve(outputDirectory, "drizzle"), {
-          recursive: true,
-        });
-      }
+      // A missing/invalid migration source must fail the release, not silently omit database setup.
+      await bundleCommerceMigrations(drizzleSource, resolve(outputDirectory, "drizzle"));
     },
   };
 }

@@ -2,19 +2,42 @@ openapi: 3.1.0
 info:
   title: MIOVA Commerce API
   version: 1.0.0
-  description: Guest storefront API. Prices are server-authoritative; payment is disabled. Browser calls require same origin.
+  description: Guest storefront API. Database prices and available stock are server-authoritative; payment is disabled. Saved orders are unreserved drafts, not confirmed sales. Browser calls require same origin.
 paths:
   /api/v1/catalog:
     get:
       operationId: getCatalog
+      description: Search and keyset-page active listings. All products remain reachable beyond 500 records. Follow pageInfo.nextCursor while hasMore is true; never treat one page as the complete shopping-bag catalogue. Invalid historical listings are skipped without ending pagination. Cursors are scoped to the store, normalized search, category, locale and sort; changing those requires a fresh first page. A live catalogue is not a cross-page snapshot, so price and stock remain server-authoritative at checkout.
+      parameters:
+        - name: q
+          in: query
+          description: Literal case-insensitive text in product name, SKU, or the chosen locale's description/detail. Unicode case matching runs on the server; this is not a fuzzy or semantic search index.
+          schema: {type: string, maxLength: 100, default: ''}
+        - name: category
+          in: query
+          schema: {type: string, enum: [all, home, tech, wear], default: all}
+        - name: locale
+          in: query
+          schema: {type: string, enum: [en, zh, es], default: en}
+        - name: sort
+          in: query
+          description: Featured uses name ascending, not a popularity claim. Every order has a deterministic product-row ID tie-breaker.
+          schema: {type: string, enum: [featured, price-low, price-high], default: featured}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: cursor
+          in: query
+          description: Opaque nextCursor from a previous response with the same store/query/sort. The page limit may change. Omit for the first page.
+          schema: {type: string, minLength: 1, maxLength: 4096}
       responses:
         '200':
-          description: USD product catalogue, locales, destinations and disabled payment availability.
+          description: One page of active priced USD listings from D1, locales, destinations and disabled payment availability. A configured empty store returns products [] and hasMore false. Zero stock listings may be present but cannot be ordered. There is no fabricated total count.
           content:
             application/json:
               schema:
                 type: object
-                required: [ok, apiVersion, currency, locales, destinations, products, payments]
+                required: [ok, apiVersion, currency, locales, destinations, products, payments, pageInfo]
                 properties:
                   ok: {const: true}
                   apiVersion: {const: v1}
@@ -22,16 +45,24 @@ paths:
                   locales: {type: array, items: {enum: [en, zh, es]}}
                   destinations: {type: object, additionalProperties: {$ref: '#/components/schemas/LocalizedText'}}
                   products: {type: array, items: {$ref: '#/components/schemas/Product'}}
+                  pageInfo:
+                    type: object
+                    required: [hasMore, nextCursor]
+                    properties:
+                      hasMore: {type: boolean}
+                      nextCursor: {type: [string, 'null'], description: Non-null exactly when hasMore is true.}
                   payments:
                     type: object
                     properties:
                       enabled: {const: false}
                       code: {const: merchant_verification_required}
                       message: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/orders:
     post:
       operationId: savePendingOrder
-      description: Guest checkout; persist a pending order. Same idempotency key returns the original order. No payment is initiated.
+      description: Guest checkout; persist an unpaid, unreserved draft using current DB price/stock. A key binds normalized request intent; matching retries return the original snapshot before checking mutable catalog. Different intent with the same key returns 409. No payment, inventory lock or dispatch is initiated.
       requestBody:
         required: true
         content:
@@ -44,15 +75,17 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ok, orderNumber, paymentStatus, routeModes, totalCents]
+                required: [ok, orderNumber, paymentStatus, routeModes, totalCents, inventoryReserved]
                 properties:
                   ok: {const: true}
                   orderNumber: {type: string, pattern: '^MW-\d{5,8}$'}
-                  paymentStatus: {const: pending}
+                  paymentStatus: {enum: [pending, paid, failed, refunded], description: New drafts are pending; retries report the original order payment state.}
+                  inventoryReserved: {const: false}
                   totalCents: {type: integer, minimum: 0}
                   routeModes: {type: array, items: {$ref: '#/components/schemas/FulfillmentMode'}}
         '400': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
         '413': {$ref: '#/components/responses/Error'}
         '415': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
@@ -113,6 +146,7 @@ components:
             properties:
               ok: {const: false}
               message: {type: string}
+              code: {type: string, description: Stable checkout error code when available.}
   schemas:
     FulfillmentMode: {enum: [marketplace, self, supplier]}
     LocalizedText:
@@ -137,6 +171,7 @@ components:
         reviews: {type: integer}
         color: {enum: [blue, ice, coral]}
         inventory: {type: integer, minimum: 0}
+        inventoryReserved: {const: false}
         category: {enum: [home, tech, wear]}
         image: {type: string}
         fulfillmentMode: {$ref: '#/components/schemas/FulfillmentMode'}

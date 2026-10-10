@@ -1,50 +1,56 @@
-
-
-
-
-
-
 const { OAuth2Client } = require('google-auth-library');
 const appleSignin = require('apple-signin-auth');
 
 
-
-
+const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const cookieParser = require('cookie-parser');
 
+const cookieParser = require('cookie-parser');
+// 登录有效期：30 天，单位为秒
+const expiresIn = 30 * 24 * 60 * 60;
 const svgCaptcha = require('svg-captcha');
 const sharp = require('sharp');
+const mysql = require('mysql2/promise');
+// 创建 MySQL 数据库连接池
+const db_pool = mysql.createPool({
+    host: process.env.MYSQL_HOST || '127.0.0.1',       // 数据库地址
+    port: Number(process.env.MYSQL_PORT || 3306),              // 数据库端口
+    user: process.env.MYSQL_USER || 'root',            // 数据库用户名
+    password: process.env.MYSQL_PASSWORD || '', // 数据库密码
+    database: process.env.MYSQL_DATABASE || 'miova_accounts',  // 数据库名称
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
+// 导出连接池，供其他接口使用
+module.exports = db_pool;
 
 const { createClient } = require('redis');
 const express = require('express');
 const app = express();
 app.use(cookieParser());
+app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.set('trust proxy', true);
+app.set('trust proxy', process.env.ACCOUNT_TRUST_PROXY || false);
 
 const redisClient = createClient({
-    url: 'redis://127.0.0.1:6379'
+    url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
 });
 
 redisClient.on('error', (error) => {
-    console.error('Redis 错误:', error);
+
 });
 
-redisClient.connect()
-    .then(() => {
-        console.log('Redis 连接成功');
-    })
-    .catch((error) => {
-        console.error('Redis 连接失败:', error);
-    });
+const redisReady = redisClient.connect();
+redisReady.catch(() => {
+    console.error('[account-api] Redis connection failed; check REDIS_URL.');
+});
 
-
-const GOOGLE_CLIENT_ID = '888693703784-6ehm7av6ogbf6kc0ckurra9par8rh7v8.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = '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';
-const GOOGLE_REDIRECT_URI =
-    'http://localhost:3000/api/account/google/callback';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ||
+    'http://localhost:3001/api/account/google/callback';
 
 const googleClient = new OAuth2Client(
     GOOGLE_CLIENT_ID,
@@ -53,10 +59,10 @@ const googleClient = new OAuth2Client(
 );
 
 
-const APPLE_CLIENT_ID = '你的 Apple Services ID';
-const APPLE_CLIENT_SECRET = '你的 Apple Client Secret';
-const APPLE_REDIRECT_URI =
-    'http://localhost:3000/api/account/apple/callback';
+const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID || '';
+const APPLE_CLIENT_SECRET = process.env.APPLE_CLIENT_SECRET || '';
+const APPLE_REDIRECT_URI = process.env.APPLE_REDIRECT_URI ||
+    'http://localhost:3001/api/account/apple/callback';
 
 //ip限流函数
 // ==============================
@@ -75,13 +81,13 @@ async function checkIpRateLimit(ip, type, limit) {
         await redisClient.expire(redisKey, 60);
     }
 
-    console.log('==============================');
-    console.log('IP 限流检查');
-    console.log('IP:', ip);
-    console.log('类型:', type);
-    console.log('当前次数:', count);
-    console.log('限制次数:', limit);
-    console.log('==============================');
+
+
+
+
+
+
+
 
     // 超过限制
     if (count > limit) {
@@ -96,7 +102,7 @@ async function checkIpRateLimit(ip, type, limit) {
 
 app.get('/api/account/google/login', async (req, res) => {
 
-    console.log('用户请求 Google 登录');
+
 
      const googleUrl = googleClient.generateAuthUrl({
         access_type: 'offline',
@@ -107,7 +113,7 @@ app.get('/api/account/google/login', async (req, res) => {
         ]
     });
 
-    console.log('Google 登录地址:', googleUrl);
+
     //打开这个网址
     res.redirect(googleUrl);
 
@@ -116,19 +122,18 @@ app.get('/api/account/google/login', async (req, res) => {
 
 app.get('/api/account/google/callback', async (req, res) => {
 
-    console.log('==============================');
-    console.log('Google 登录回来了');
-    console.log('==============================');
 
-    console.log('Google 回调数据:');
-    console.log(req.query);
+
+
+
+
+
+
+    let userId;
 
     try {
 
-        // ==============================
-        // ① 获取 Google 返回的 code
-        // ==============================
-
+        // 获取 Google 返回的 code
         const code = req.query.code;
 
         if (!code) {
@@ -147,10 +152,10 @@ app.get('/api/account/google/callback', async (req, res) => {
         const { tokens } =
             await googleClient.getToken(code);
 
-        console.log('==============================');
-        console.log('Google Token:');
-        console.log(tokens);
-        console.log('==============================');
+
+
+
+
 
         // ==============================
         // ③ 验证 Google ID Token
@@ -169,55 +174,20 @@ app.get('/api/account/google/callback', async (req, res) => {
         const payload =
             ticket.getPayload();
 
-        console.log('==============================');
-        console.log('Google 用户详细信息:');
-        console.log(payload);
-        console.log('==============================');
 
-        console.log(
-            'Google 用户 ID:',
-            payload.sub
-        );
 
-        console.log(
-            'Google 邮箱:',
-            payload.email
-        );
 
-        console.log(
-            '邮箱是否验证:',
-            payload.email_verified
-        );
 
-        console.log(
-            '用户姓名:',
-            payload.name
-        );
 
-        console.log(
-            '名字:',
-            payload.given_name
-        );
 
-        console.log(
-            '姓氏:',
-            payload.family_name
-        );
 
-        console.log(
-            '头像:',
-            payload.picture
-        );
 
-        console.log(
-            '语言:',
-            payload.locale
-        );
 
-        // ==============================
-        // ⑤ 检查 Google 邮箱
-        // ==============================
 
+
+
+
+        // 检查 Google 邮箱
         if (!payload.email) {
 
             return res.status(400).json({
@@ -227,10 +197,7 @@ app.get('/api/account/google/callback', async (req, res) => {
 
         }
 
-        // ==============================
-        // ⑥ 检查邮箱是否验证
-        // ==============================
-
+        //检查邮箱是否验证
         if (!payload.email_verified) {
 
             return res.status(400).json({
@@ -240,109 +207,173 @@ app.get('/api/account/google/callback', async (req, res) => {
 
         }
 
-        // ==============================
-        // ⑦ 注册或者登录
-        // ==============================
-        //
-        // 现在还没有数据库
-        // 暂时模拟 user_id
-        //
-        // 以后这里需要：
-        //
-        // 1. 根据 Google sub 查询用户
-        //
-        // 2. 如果存在：
-        //       直接登录
-        //
-        // 3. 如果不存在：
-        //       创建用户
-        //       再登录
-        //
-        // ==============================
 
-       
-        console.log(
-            'Google 用户对应 user_id:',
-            userId
+        //  注册或者登录
+        const [users] = await db_pool.execute(
+            'SELECT id, email, nickname, avatar_url FROM users WHERE google_sub = ? LIMIT 1',
+            [payload.sub]
         );
+        // 判断 Google 用户是否已经注册
+        if (users.length > 0) {
 
-        // ==============================
-        // ⑧ 生成 Token
-        // ==============================
+            // 用户已存在，直接登录
+            userId = users[0].id;
 
-        const token =
-            crypto.randomBytes(32).toString('hex');
+            // 更新最后登录时间和最后登录 IP
+            await db_pool.execute(
+                `UPDATE users
+                SET last_login_at = NOW(),
+                    last_login_ip = ?,
+                    updated_at = NOW()
+                WHERE id = ?`,
+                [
+                    req.ip,
+                    userId
+                ]
+            );
 
-        console.log(
-            '生成 Token:',
-            token
-        );
 
-        // ==============================
-        // ⑨ 保存 Token 到 Redis
-        // ==============================
 
-        const sessionKey =
-            `session:${token}`;
 
-        await redisClient.set(
-            sessionKey,
-            JSON.stringify({
-                user_id: userId,
-                account: payload.email,
-                account_type: 'google',
-                google_id: payload.sub
-            }),
-            {
-                EX: 30 * 24 * 60 * 60
+
+        } else {
+
+            // 用户不存在，创建新用户
+
+            // 生成用户昵称
+            const nickname = payload.name || 'user';
+
+            // 获取 Google 头像地址
+            const avatarUrl = payload.picture || null;
+
+            // 获取当前秒级时间戳，作为初始用户 ID
+            userId = Math.floor(Date.now() / 1000);
+            // 循环查询数据库，直到找到没有使用的 ID
+            while (true) {
+
+                // 查询当前 ID 是否已经存在
+                const [rows] = await db_pool.execute(
+                    'SELECT id FROM users WHERE id = ? LIMIT 1',
+                    [userId]
+                );
+
+                // 如果没有查询到记录，说明这个 ID 可以使用
+                if (rows.length === 0) {
+                    break;
+                }
+
+                // 如果 ID 已经存在，就加 1 后重新查询
+                userId++;
             }
-        );
 
-        console.log(
-            'Token 已保存到 Redis'
-        );
 
-        // ==============================
-        // ⑩ 返回登录成功
-        // ==============================
-
-        return res.json({
-
-            success: true,
-
-            message: 'Google 注册/登录成功',
-
-            data: {
-
-                user_id: userId,
-
-                token: token,
-
-                expires_in:
-                    30 * 24 * 60 * 60,
-
-                google_id:
-                    payload.sub,
-
-                email:
+            // 插入新用户记录
+            const [result] = await db_pool.execute(
+                `INSERT INTO users (
+                    id,
+                    email,
+                    nickname,
+                    avatar_url,
+                    google_sub,
+                    status,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                    last_login_ip
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?
+                )`,
+                [
+                    userId,
                     payload.email,
+                    nickname,
+                    avatarUrl,
+                    payload.sub,
+                    1,
+                    req.ip
+                ]
+            );
 
-                name:
-                    payload.name || null,
 
-                picture:
-                    payload.picture || null
 
-            }
+        }
 
-        });
+
+
+            //  生成 Token
+
+
+            const token = crypto.randomBytes(32).toString('hex');
+
+
+
+            // ==============================
+            // ⑨ 保存 Token 到 Redis
+            // ==============================
+
+            const sessionKey =
+                `session:${token}`;
+
+            await redisClient.set(
+                sessionKey,
+                JSON.stringify({
+                    user_id: userId,
+                    account: payload.email,
+                    account_type: 'google',
+                    google_id: payload.sub
+                }),
+                {
+                    EX: 30 * 24 * 60 * 60
+                }
+            );
+
+
+
+            // ==============================
+            // ⑩ 返回登录成功
+            // ==============================
+            res.cookie(
+                'token',
+                token,
+                {
+                    httpOnly: true,
+                    // 本地 HTTP 测试
+                    // 正式 HTTPS 改成 true
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    // 30 天
+                    maxAge:expiresIn * 1000,
+                    // 整个网站都可以携带这个 Cookie
+                    path: '/'
+                }
+            );
+
+
+            return res.json({
+                success: true,
+                message: 'Google 注册/登录成功',
+                data: {
+                    user_id: userId,
+                    token: token,
+                    expires_in: 30 * 24 * 60 * 60,
+                    google_id: payload.sub,
+                    account: payload.email,
+                    account_type: 'google',
+                    name: payload.name || null,
+                    picture: payload.picture || null
+                }
+            });
+
+
+
+
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Google 登录失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(401).json({
 
@@ -365,15 +396,15 @@ app.get('/api/account/google/callback', async (req, res) => {
 
 app.post('/api/account/google/app', async (req, res) => {
 
-    console.log('==============================');
-    console.log('App 请求 Google 登录');
-    console.log('==============================');
+
+
+
 
     try {
 
         const { idToken } = req.body;
 
-        console.log('收到 App 的 Google ID Token');
+
 
         // 检查 Token 是否存在
         if (!idToken) {
@@ -394,15 +425,15 @@ app.post('/api/account/google/app', async (req, res) => {
         // 获取 Google 用户信息
         const payload = ticket.getPayload();
 
-        console.log('Google 用户信息:');
-        console.log('Google 用户 ID:', payload.sub);
-        console.log('邮箱:', payload.email);
-        console.log('邮箱是否验证:', payload.email_verified);
-        console.log('姓名:', payload.name);
-        console.log('名字:', payload.given_name);
-        console.log('姓氏:', payload.family_name);
-        console.log('头像:', payload.picture);
-        console.log('语言:', payload.locale);
+
+
+
+
+
+
+
+
+
 
         // ==============================
         // Google 用户身份
@@ -410,13 +441,112 @@ app.post('/api/account/google/app', async (req, res) => {
 
         const googleUserId = payload.sub;
 
+
         // ==============================
-        // 暂时没有数据库
-        // 这里先模拟一个 user_id
+        // 查询用户是否已经注册
         // ==============================
 
+        const [users] = await db_pool.execute(
+            `SELECT id, email, nickname, avatar_url
+             FROM users
+             WHERE google_sub = ?
+             LIMIT 1`,
+            [googleUserId]
+        );
 
-        console.log('系统用户 ID:');
+
+        // 保存系统用户 ID
+        let userId;
+
+        if (users.length > 0) {
+
+            // 使用数据库中已有的用户 ID
+            userId = users[0].id;
+
+            // 更新最后登录时间和 IP
+            await db_pool.execute(
+                `UPDATE users
+                 SET last_login_at = NOW(),
+                     last_login_ip = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [
+                    req.ip,
+                    userId
+                ]
+            );
+
+            //登录
+
+
+
+        }else {
+
+            // ==============================
+            // 用户尚未注册，创建新用户
+            // ==============================
+
+            // 获取当前秒级时间戳，作为初始用户 ID
+            userId = Math.floor(Date.now() / 1000);
+
+            // 查询 ID 是否已经存在
+            while (true) {
+
+                const [rows] = await db_pool.execute(
+                    'SELECT id FROM users WHERE id = ? LIMIT 1',
+                    [userId]
+                );
+
+                // 如果 ID 不存在，就可以使用
+                if (rows.length === 0) {
+                    break;
+                }
+
+                // 如果 ID 已存在，就加 1 后重新查询
+                userId++;
+            }
+             // 生成用户昵称
+            const nickname = payload.name || 'user';
+
+            // 获取 Google 头像地址
+            const avatarUrl = payload.picture || null;
+
+            // 插入新用户记录
+            await db_pool.execute(
+                `INSERT INTO users (
+                    id,
+                    email,
+                    nickname,
+                    avatar_url,
+                    google_sub,
+                    status,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                    last_login_ip
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?
+                )`,
+                [
+                    userId,
+                    payload.email,
+                    nickname,
+                    avatarUrl,
+                    googleUserId,
+                    1,
+                    req.ip
+                ]
+            );
+
+
+        }
+
+
+
+
+
+
+
 
         // ==============================
         // 生成我们自己系统的 Token
@@ -424,7 +554,7 @@ app.post('/api/account/google/app', async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
 
-        console.log('生成系统 Token:', token);
+
 
         // ==============================
         // 保存登录状态到 Redis
@@ -445,43 +575,34 @@ app.post('/api/account/google/app', async (req, res) => {
             }
         );
 
-        console.log('登录 Token 已保存到 Redis');
-        console.log('Redis Key:', sessionKey);
+
+
 
         // ==============================
         // 返回给 App
         // ==============================
-
         return res.json({
             success: true,
-            message: 'Google 注册并登录成功',
-
+            message: 'Google 注册/登录成功',
             data: {
                 user_id: userId,
-
                 token: token,
-
                 expires_in: 30 * 24 * 60 * 60,
-
-                google: {
-                    id: googleUserId,
-                    email: payload.email || null,
-                    email_verified: payload.email_verified || false,
-                    name: payload.name || null,
-                    given_name: payload.given_name || null,
-                    family_name: payload.family_name || null,
-                    picture: payload.picture || null,
-                    locale: payload.locale || null
-                }
+                google_id: payload.sub,
+                account: payload.email,
+                account_type: 'google',
+                name: payload.name || null,
+                picture: payload.picture || null
             }
         });
 
+
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Google ID Token 验证失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(401).json({
             success: false,
@@ -493,20 +614,13 @@ app.post('/api/account/google/app', async (req, res) => {
 
 });
 
-
-// apple 网页注册登录
-
-// apple  app 网页注册登录
-
-
-
 // ===============================
-// Apple 网页登录
+// Apple 网页登录注册
 // ===============================
 
 app.get('/api/account/apple/login', async (req, res) => {
 
-    console.log('用户请求 Apple 登录');
+
 
     try {
 
@@ -518,13 +632,13 @@ app.get('/api/account/apple/login', async (req, res) => {
             responseType: 'code'
         });
 
-        console.log('Apple 登录地址:', appleUrl);
+
 
         res.redirect(appleUrl);
 
     } catch (error) {
 
-        console.error('生成 Apple 登录地址失败:', error);
+
 
         res.status(500).json({
             success: false,
@@ -538,41 +652,29 @@ app.get('/api/account/apple/login', async (req, res) => {
 
 
 // ===============================
-// Apple 网页登录回调
+// Apple 网页登录注册回调
 // ===============================
 
 app.post('/api/account/apple/callback', async (req, res) => {
 
-    console.log('==============================');
-    console.log('Apple 登录回来了');
-    console.log('==============================');
 
-    console.log('Apple 返回的数据:', req.body);
+
+
 
     try {
 
-        const {
-            code,
-            user
-        } = req.body;
+        // 获取 Apple 返回的授权码和用户信息
+        const { code, user } = req.body;
 
-        // ==============================
-        // 检查 authorization code
-        // ==============================
-
+        // 检查授权码是否存在
         if (!code) {
-
             return res.status(400).json({
                 success: false,
                 message: '缺少 Apple authorization code'
             });
-
         }
 
-        // ==============================
-        // 用 authorization code 向 Apple 换取 Token
-        // ==============================
-
+        // 使用授权码向 Apple 换取 Token
         const tokenResponse = await appleSignin.getAuthorizationToken(
             code,
             {
@@ -582,12 +684,7 @@ app.post('/api/account/apple/callback', async (req, res) => {
             }
         );
 
-        console.log('Apple Token 获取成功');
-
-        // ==============================
-        // 验证 Apple ID Token
-        // ==============================
-
+        // 验证 Apple ID Token，获取 Apple 用户信息
         const appleUser = await appleSignin.verifyIdToken(
             tokenResponse.id_token,
             {
@@ -595,45 +692,150 @@ app.post('/api/account/apple/callback', async (req, res) => {
             }
         );
 
-        // ==============================
-        // 获取 Apple 用户信息
-        // ==============================
+        // 检查 Apple 用户唯一标识是否存在
+        if (!appleUser || !appleUser.sub) {
+            return res.status(401).json({
+                success: false,
+                message: 'Apple 用户信息无效'
+            });
+        }
 
-        console.log('Apple 用户信息:');
-
-        console.log('Apple 用户 ID:', appleUser.sub);
-
-        console.log('邮箱:', appleUser.email);
-
-        console.log(
-            '邮箱是否验证:',
-            appleUser.email_verified
-        );
-
-        // ==============================
-        // Apple 用户唯一 ID
-        // ==============================
-
+        // 获取 Apple 唯一账号标识
         const appleUserId = appleUser.sub;
 
-        console.log('Apple 用户唯一 ID:', appleUserId);
+        // 获取 Apple 邮箱，没有返回时使用 NULL
+        const email = appleUser.email || null;
+
+
+
 
         // ==============================
-        // 暂时没有数据库
-        // 先模拟系统 user_id
+        // 查询用户是否已经注册
         // ==============================
 
-        const userId = 10001;
+        const [users] = await db_pool.execute(
+            `SELECT id, email, nickname, avatar_url
+             FROM users
+             WHERE apple_sub = ?
+             LIMIT 1`,
+            [appleUserId]
+        );
 
-        console.log('系统用户 ID:', userId);
+        // 保存网站内部用户 ID
+        let userId;
 
         // ==============================
-        // 生成我们自己系统的 Token
+        // 用户已注册，直接登录
+        // ==============================
+
+        if (users.length > 0) {
+
+            // 使用数据库中已有的用户 ID
+            userId = users[0].id;
+
+            // 更新最后登录时间和 IP
+            await db_pool.execute(
+                `UPDATE users
+                 SET last_login_at = NOW(),
+                     last_login_ip = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [
+                    req.ip,
+                    userId
+                ]
+            );
+
+
+
+        } else {
+
+            // ==============================
+            // 用户尚未注册，创建用户
+            // ==============================
+
+            // 获取当前秒级时间戳作为初始用户 ID
+            userId = Math.floor(Date.now() / 1000);
+
+            // 查询 ID 是否已经存在
+            while (true) {
+
+                const [rows] = await db_pool.execute(
+                    'SELECT id FROM users WHERE id = ? LIMIT 1',
+                    [userId]
+                );
+
+                // 没有查询到记录，可以使用该 ID
+                if (rows.length === 0) {
+                    break;
+                }
+
+                // ID 已存在，加 1 后重新查询
+                userId++;
+            }
+
+            // Apple 通常不提供头像，使用默认昵称
+            // Apple 首次授权可能提供姓名，但后续登录未必会提供
+            let nickname = 'user';
+
+            // 只在本次请求提供了姓名时使用
+            if (user && typeof user === 'object') {
+                try {
+                    const userInfo =
+                        typeof user === 'string'
+                            ? JSON.parse(user)
+                            : user;
+
+                    if (userInfo.name) {
+                        const firstName = userInfo.name.firstName || '';
+                        const lastName = userInfo.name.lastName || '';
+
+                        nickname =
+                            `${firstName} ${lastName}`.trim() || 'user';
+                    }
+                } catch (error) {
+
+                }
+            }
+
+            // Apple 没有提供头像时保存 NULL
+            const avatarUrl = null;
+
+            // 插入新用户记录
+            await db_pool.execute(
+                `INSERT INTO users (
+                    id,
+                    email,
+                    nickname,
+                    avatar_url,
+                    apple_sub,
+                    status,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                    last_login_ip
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?
+                )`,
+                [
+                    userId,
+                    email,
+                    nickname,
+                    avatarUrl,
+                    appleUserId,
+                    1,
+                    req.ip
+                ]
+            );
+
+
+        }
+
+        // ==============================
+        // 生成系统 Token
         // ==============================
 
         const token = crypto.randomBytes(32).toString('hex');
-
-        console.log('生成系统 Token:', token);
 
         // ==============================
         // 保存登录状态到 Redis
@@ -647,56 +849,60 @@ app.post('/api/account/apple/callback', async (req, res) => {
                 user_id: userId,
                 login_type: 'apple',
                 apple_id: appleUserId,
-                email: appleUser.email || null
+                email: email
             }),
             {
                 EX: 30 * 24 * 60 * 60
             }
         );
 
-        console.log('登录 Token 已保存到 Redis');
 
-        console.log('Redis Key:', sessionKey);
 
         // ==============================
-        // 注册完成，直接登录
+        // 返回统一格式的登录结果
+        // 与 Google 登录接口保持一致
         // ==============================
+        res.cookie(
+                'token',
+                token,
+                {
+                    httpOnly: true,
+                    // 本地 HTTP 测试
+                    // 正式 HTTPS 改成 true
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    // 30 天
+                    maxAge:expiresIn * 1000,
+                    // 整个网站都可以携带这个 Cookie
+                    path: '/'
+                }
+            );
 
         return res.json({
             success: true,
-            message: 'Apple 注册并登录成功',
-
+            message: 'Apple 注册/登录成功',
             data: {
-
                 user_id: userId,
-
                 token: token,
-
                 expires_in: 30 * 24 * 60 * 60,
-
-                apple: {
-                    id: appleUserId,
-
-                    email: appleUser.email || null,
-
-                    email_verified:
-                        appleUser.email_verified || false
-                }
-
+                apple_id: appleUserId,
+                account: email,
+                account_type:'apple',
+                name: null,
+                picture: null
             }
         });
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Apple 登录验证失败');
-        console.error(error);
-        console.error('==============================');
 
-        return res.status(401).json({
+
+
+
+
+        return res.status(500).json({
             success: false,
-            message: 'Apple 登录失败',
-            error: error.message
+            message: 'Apple 注册/登录失败'
         });
 
     }
@@ -705,18 +911,16 @@ app.post('/api/account/apple/callback', async (req, res) => {
 
 //apple账号的app端应用的登录注册
 
+
 app.post('/api/account/apple/app', async (req, res) => {
 
-    console.log('==============================');
-    console.log('App Apple 登录请求');
-    console.log('==============================');
 
-    console.log('App 返回的数据:');
-    console.log(req.body);
+
+
 
     try {
 
-        // App 传过来的 Apple identityToken
+        // 获取 App 传来的参数
         const {
             identityToken,
             authorizationCode,
@@ -724,32 +928,15 @@ app.post('/api/account/apple/app', async (req, res) => {
             email
         } = req.body;
 
-        // 检查 identityToken
+        // 检查 Apple identityToken 是否存在
         if (!identityToken) {
-
             return res.status(400).json({
                 success: false,
                 message: '缺少 Apple identityToken'
             });
-
         }
 
-        console.log('Apple identityToken:');
-        console.log(identityToken);
-
-        console.log('Apple authorizationCode:');
-        console.log(authorizationCode);
-
-        console.log('App 返回的 Apple user:');
-        console.log(user);
-
-        console.log('App 返回的 email:');
-        console.log(email);
-
-        // ==============================
-        // 验证 Apple identityToken
-        // ==============================
-
+        // 验证 Apple identityToken，获取 Apple 用户信息
         const appleUser = await appleSignin.verifyIdToken(
             identityToken,
             {
@@ -757,112 +944,166 @@ app.post('/api/account/apple/app', async (req, res) => {
             }
         );
 
-        console.log('==============================');
-        console.log('Apple 用户详细信息');
-        console.log('==============================');
-
-        console.log('Apple 用户 ID:', appleUser.sub);
-        console.log('邮箱:', appleUser.email);
-        console.log('邮箱是否验证:', appleUser.email_verified);
-
-        console.log('==============================');
-
-        // ==============================
-        // Apple 用户唯一 ID
-        // ==============================
-
+        // 获取 Apple 用户唯一标识
         const appleUserId = appleUser.sub;
 
-        console.log('Apple 用户唯一 ID:', appleUserId);
+        // 检查 Apple 用户唯一标识
+        if (!appleUserId) {
+            return res.status(401).json({
+                success: false,
+                message: '无法获取 Apple 用户唯一标识'
+            });
+        }
 
-        // ==============================
-        // 邮箱
-        // ==============================
-
-        // 优先使用 Apple 验证出来的邮箱
-        // 如果 Apple 没有返回，再使用 App 传过来的 email
+        // 获取邮箱，优先使用 Apple 验证结果中的邮箱
         const userEmail = appleUser.email || email || null;
 
-        console.log('最终使用的邮箱:', userEmail);
+        // 默认使用 user 作为昵称
+        let nickname = 'user';
 
-        // ==============================
-        // 注册或者登录
-        // ==============================
+        // 尝试解析 App 传来的 Apple 用户姓名
+        try {
+            const userInfo = typeof user === 'string'
+                ? JSON.parse(user)
+                : user;
 
-        // 目前还没有数据库
-        // 暂时模拟一个 user_id
+            // 提取名字和姓氏
+            const firstName = userInfo?.name?.firstName || '';
+            const lastName = userInfo?.name?.lastName || '';
 
-        const userId = 10001;
+            // 将姓名拼接成昵称
+            nickname = `${firstName} ${lastName}`.trim() || 'user';
 
-        console.log('系统用户 ID:', userId);
+        } catch (error) {
+            // 姓名解析失败时，使用默认昵称
 
-        // ==============================
-        // 生成我们自己系统的 Token
-        // ==============================
+        }
 
+        // 根据 Apple 唯一标识查询数据库中的用户
+        const [users] = await db_pool.execute(
+            'SELECT id, nickname FROM users WHERE apple_sub = ? LIMIT 1',
+            [appleUserId]
+        );
+
+        // 声明系统用户 ID
+        let userId;
+
+        // 判断用户是否已经注册
+        if (users.length > 0) {
+
+            // 用户已存在，使用数据库中的用户 ID
+            userId = users[0].id;
+
+            // 更新最后登录时间和最后登录 IP
+            await db_pool.execute(
+                `UPDATE users
+                 SET last_login_at = NOW(),
+                     last_login_ip = ?,
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [req.ip, userId]
+            );
+
+            // 已有昵称时不覆盖用户原来的昵称
+            nickname = users[0].nickname || nickname;
+
+
+        } else {
+
+            // 获取当前秒级时间戳作为初始用户 ID
+            userId = Math.floor(Date.now() / 1000);
+
+            // 检查用户 ID 是否已存在，重复时加 1
+            while (true) {
+
+                const [existingUsers] = await db_pool.execute(
+                    'SELECT id FROM users WHERE id = ? LIMIT 1',
+                    [userId]
+                );
+
+                // 当前 ID 未使用，可以使用
+                if (existingUsers.length === 0) {
+                    break;
+                }
+
+                // 当前 ID 已存在，递增 1 后继续检查
+                userId++;
+            }
+
+            // 将新用户写入数据库
+            await db_pool.execute(
+                `INSERT INTO users (
+                    id,
+                    email,
+                    nickname,
+                    avatar_url,
+                    apple_sub,
+                    status,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                    last_login_ip
+                ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?)`,
+                [
+                    userId,
+                    userEmail,
+                    nickname,
+                    null,
+                    appleUserId,
+                    1,
+                    req.ip
+                ]
+            );
+
+
+        }
+
+        // 生成系统自己的登录 Token
         const token = crypto.randomBytes(32).toString('hex');
 
-        console.log('生成系统 Token:', token);
-
-        // ==============================
-        // 保存登录状态到 Redis
-        // ==============================
-
+        // 拼接 Redis 会话存储键
         const sessionKey = `session:${token}`;
 
+        // 将登录状态保存到 Redis，有效期 30 天
         await redisClient.set(
             sessionKey,
             JSON.stringify({
                 user_id: userId,
-                login_type: 'apple',
-                apple_id: appleUserId,
-                email: userEmail
+                account: userEmail,
+                account_type: 'apple',
+                apple_id: appleUserId
             }),
             {
                 EX: 30 * 24 * 60 * 60
             }
         );
 
-        console.log('登录 Token 已保存到 Redis');
-        console.log('Redis Key:', sessionKey);
-
-        // ==============================
-        // 注册完成后自动登录
-        // ==============================
-
+        // 返回统一的注册/登录成功结果
         return res.json({
             success: true,
-            message: 'Apple 注册并登录成功',
-
+            message: 'Apple 注册/登录成功',
             data: {
                 user_id: userId,
-
                 token: token,
-
                 expires_in: 30 * 24 * 60 * 60,
-
-                apple: {
-                    id: appleUserId,
-                    email: userEmail,
-                    email_verified:
-                        appleUser.email_verified || false
-                }
+                apple_id: appleUserId,
+                account: userEmail,
+                account_type:'apple',
+                name: nickname,
+                picture: null
             }
         });
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Apple App 登录验证失败');
-        console.error(error);
-        console.error('==============================');
+        // 记录服务端错误详情
 
-        return res.status(401).json({
+
+        // 向 App 返回错误信息，不暴露内部异常详情
+        return res.status(500).json({
             success: false,
-            message: 'Apple App 登录失败',
-            error: error.message
+            message: 'Apple App 注册/登录失败'
         });
-
     }
 
 });
@@ -870,14 +1111,12 @@ app.post('/api/account/apple/app', async (req, res) => {
 
 // 图片验证码生成接口
 // ==============================
-// 图片验证码生成接口
-// ==============================
 
 app.post('/api/account/captcha/image', async (req, res) => {
 
-    console.log('==============================');
-    console.log('图片验证码生成请求');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -921,8 +1160,8 @@ app.post('/api/account/captcha/image', async (req, res) => {
             }
         );
 
-        console.log('验证码 ID:', captchaId);
-        console.log('验证码答案:', captcha.text);
+
+
 
         // SVG 转 Base64
         const imageBase64 = Buffer
@@ -949,7 +1188,7 @@ app.post('/api/account/captcha/image', async (req, res) => {
 
     } catch (error) {
 
-        console.error('图片验证码生成失败:', error);
+
 
         return res.status(500).json({
 
@@ -970,9 +1209,9 @@ app.post('/api/account/captcha/image', async (req, res) => {
 
 app.post('/api/account/captcha/image/verify', async (req, res) => {
 
-    console.log('==============================');
-    console.log('图片验证码验证请求');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -1067,7 +1306,7 @@ app.post('/api/account/captcha/image/verify', async (req, res) => {
 
         }
 
-        console.log('图片验证码验证成功');
+
 
         // ==============================
         // 验证成功以后删除验证码
@@ -1123,7 +1362,7 @@ app.post('/api/account/captcha/image/verify', async (req, res) => {
 
     } catch (error) {
 
-        console.error('图片验证码验证失败:', error);
+
 
         return res.status(500).json({
 
@@ -1143,9 +1382,9 @@ app.post('/api/account/captcha/image/verify', async (req, res) => {
 
 app.post('/api/account/captcha/slider', async (req, res) => {
 
-    console.log('==============================');
-    console.log('滑动验证码生成请求');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -1350,9 +1589,9 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
         );
 
-        console.log('滑动验证码 ID:', captchaId);
-        console.log('正确 X:', puzzleX);
-        console.log('正确 Y:', puzzleY);
+
+
+
 
         // ==============================
         // 返回
@@ -1388,7 +1627,7 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
     } catch (error) {
 
-        console.error('滑动验证码生成失败:', error);
+
 
         return res.status(500).json({
 
@@ -1408,9 +1647,9 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
 app.post('/api/account/captcha/slider/verify', async (req, res) => {
 
-    console.log('==============================');
-    console.log('滑动验证码验证请求');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -1513,15 +1752,15 @@ app.post('/api/account/captcha/slider/verify', async (req, res) => {
                 userX - correctX
             );
 
-        console.log('用户 X:', userX);
-        console.log('正确 X:', correctX);
-        console.log('误差:', difference);
+
+
+
 
         // ==============================
         // 验证失败
         // ==============================
 
-        if (difference > tolerance) {
+        if (!Number.isFinite(difference) || difference > tolerance) {
 
             return res.status(400).json({
 
@@ -1533,7 +1772,7 @@ app.post('/api/account/captcha/slider/verify', async (req, res) => {
 
         }
 
-        console.log('滑动验证码验证成功');
+
 
         // ==============================
         // 删除验证码
@@ -1592,7 +1831,7 @@ app.post('/api/account/captcha/slider/verify', async (req, res) => {
 
     } catch (error) {
 
-        console.error('滑动验证码验证失败:', error);
+
 
         return res.status(500).json({
 
@@ -1617,18 +1856,18 @@ app.post('/api/account/captcha/slider/verify', async (req, res) => {
 
 // 发送邮箱验证码
 async function sendEmailCode(email, code) {
-    console.log('收件邮箱:', email);
-    console.log('验证码:', code);
+
+
     // 这里以后实现真正的邮件发送
 }
 
 // 发送邮箱注册验证码
 app.post('/api/account/email/send-code', async (req, res) => {
 
-    console.log('==============================');
-    console.log('发送邮箱注册验证码');
-    console.log('==============================');
-        
+
+
+
+
 
     try {
         // ==============================
@@ -1650,8 +1889,6 @@ app.post('/api/account/email/send-code', async (req, res) => {
         }
 
 
-
-        
 
         const {
             email,
@@ -1697,7 +1934,7 @@ app.post('/api/account/email/send-code', async (req, res) => {
             });
         }
 
-        console.log('captcha_token 验证成功');
+
 
         // ==============================
         // 4. 使用一次后立即删除
@@ -1712,7 +1949,7 @@ app.post('/api/account/email/send-code', async (req, res) => {
         const normalizedEmail =
             email.trim().toLowerCase();
 
-        console.log('用户邮箱:', normalizedEmail);
+
 
         // ==============================
         // 6. 生成 6 位验证码
@@ -1722,7 +1959,7 @@ app.post('/api/account/email/send-code', async (req, res) => {
             100000 + Math.random() * 900000
         ).toString();
 
-        console.log('生成验证码:', code);
+
 
         // ==============================
         // 7. Redis Key
@@ -1744,8 +1981,8 @@ app.post('/api/account/email/send-code', async (req, res) => {
             }
         );
 
-        console.log('验证码已经保存到 Redis');
-        console.log('Redis Key:', redisKey);
+
+
 
         // ==============================
         // 9. 发送邮件
@@ -1770,10 +2007,10 @@ app.post('/api/account/email/send-code', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('发送邮箱验证码失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -1791,9 +2028,9 @@ app.post('/api/account/email/send-code', async (req, res) => {
 
 app.post('/api/account/email/register', async (req, res) => {
 
-    console.log('==============================');
-    console.log('邮箱注册请求');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -1846,6 +2083,21 @@ app.post('/api/account/email/register', async (req, res) => {
         // 3. Redis Key
         // ==============================
 
+
+        const [existingUsers] = await db_pool.execute(
+            'SELECT id FROM users WHERE email = ? LIMIT 1',
+            [normalizedEmail]
+        );
+
+        // 邮箱已经注册，不允许重复注册
+        if (existingUsers.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: '该邮箱已经注册'
+            });
+        }
+
+
         const redisKey =
             `email_register_code:${normalizedEmail}`;
 
@@ -1857,8 +2109,8 @@ app.post('/api/account/email/register', async (req, res) => {
             redisKey
         );
 
-        console.log('Redis 中的验证码:', savedCode);
-        console.log('用户提交的验证码:', code);
+
+
 
         // ==============================
         // 5. 验证码不存在
@@ -1886,30 +2138,90 @@ app.post('/api/account/email/register', async (req, res) => {
 
         }
 
-        console.log('验证码验证成功');
+
 
         // ==============================
         // 7. 注册用户
         // ==============================
 
-        console.log('==============================');
-        console.log('用户注册信息');
-        console.log('==============================');
 
-        console.log('邮箱:', normalizedEmail);
-        console.log('密码:', password);
-        console.log('验证码:', code);
 
-        console.log('==============================');
+
+
+
+
+
+
+
 
         // ==============================
-        // 暂时没有数据库
-        // 这里先模拟 user_id
+        // 8. 生成用户 ID
         // ==============================
 
-        const userId = 10001;
+        // 使用当前秒级时间戳作为初始用户 ID
+        let userId = Math.floor(Date.now() / 1000);
 
-        console.log('系统用户 ID:', userId);
+        // 如果 ID 已存在，就加 1，直到找到未使用的 ID
+        while (true) {
+
+            const [existingIds] = await db_pool.execute(
+                'SELECT id FROM users WHERE id = ? LIMIT 1',
+                [userId]
+            );
+
+            // ID 不存在，可以使用
+            if (existingIds.length === 0) {
+                break;
+            }
+
+            // ID 已存在，加 1 后继续检查
+            userId++;
+        }
+
+        // ==============================
+        // 9. 密码加密
+        // ==============================
+
+        // 使用 bcrypt 对密码进行哈希处理
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // ==============================
+        // 10. 插入新用户
+        // ==============================
+
+        await db_pool.execute(
+            `INSERT INTO users (
+                id,
+                email,
+                phone,
+                password,
+                nickname,
+                avatar_url,
+                status,
+                created_at,
+                updated_at,
+                last_login_at,
+                last_login_ip
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?)`,
+            [
+                userId,
+                normalizedEmail,
+                null,
+                hashedPassword,
+                'user',
+                null,
+                1,
+                req.ip
+            ]
+        );
+
+
+
+
+
+
+
+
 
         // ==============================
         // 8. 生成我们自己系统的 Token
@@ -1917,7 +2229,7 @@ app.post('/api/account/email/register', async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
 
-        console.log('生成系统 Token:', token);
+
 
         // ==============================
         // 9. 保存登录状态到 Redis
@@ -1937,8 +2249,8 @@ app.post('/api/account/email/register', async (req, res) => {
             }
         );
 
-        console.log('登录 Token 已保存到 Redis');
-        console.log('Redis Key:', sessionKey);
+
+
 
         // ==============================
         // 10. 删除注册验证码
@@ -1947,7 +2259,7 @@ app.post('/api/account/email/register', async (req, res) => {
 
         await redisClient.del(redisKey);
 
-        console.log('Redis 验证码已经删除');
+
 
         // ==============================
         // 11. 注册完成，自动登录
@@ -1959,7 +2271,8 @@ app.post('/api/account/email/register', async (req, res) => {
 
             data: {
                 user_id: userId,
-                email: normalizedEmail,
+                account: normalizedEmail,
+                account_type:'email',
                 token: token,
                 expires_in: 30 * 24 * 60 * 60
             }
@@ -1967,10 +2280,10 @@ app.post('/api/account/email/register', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('邮箱注册失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -1982,33 +2295,33 @@ app.post('/api/account/email/register', async (req, res) => {
 });
 
 
-  
-//手机发送短信
-async function sendSms(phone, message) {
 
-    console.log('==============================');
-    console.log('准备发送短信');
-    console.log('手机号:', phone);
-    console.log('短信内容:', message);
-    console.log('==============================');
+//手机发送短信
+async function sendSms(phoneCountryCode, phone, message) {
+
+
+
+
+
+
+
 
     // TODO:
     // 这里以后接入 Twilio、AWS SNS、阿里云等短信服务
     // 例如：
-    // await xxx.send(phone, message);
+    // await xxx.send(phoneCountryCode, phone, message);
 
     return true;
 }
-
 
 // ==============================
 // 发送注册短信验证码
 // ==============================
 app.post('/api/account/phone/send-code', async (req, res) => {
 
-    console.log('==============================');
-    console.log('发送注册短信验证码');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -2029,6 +2342,7 @@ app.post('/api/account/phone/send-code', async (req, res) => {
 
         const {
             phone,
+            phone_country_code,
             captcha_token
         } = req.body;
 
@@ -2065,12 +2379,12 @@ app.post('/api/account/phone/send-code', async (req, res) => {
         // 4. 验证成功后立即删除
         await redisClient.del(captchaTokenKey);
 
-        console.log('captcha_token 验证成功');
+
 
         // 5. 处理手机号
         const normalizedPhone = phone.trim();
 
-        console.log('手机号:', normalizedPhone);
+
 
         // 6. 生成 6 位验证码
         const code =
@@ -2079,7 +2393,7 @@ app.post('/api/account/phone/send-code', async (req, res) => {
                 Math.random() * 900000
             ).toString();
 
-        console.log('生成短信验证码:', code);
+
 
         // 7. 保存验证码到 Redis
         const redisKey =
@@ -2093,8 +2407,8 @@ app.post('/api/account/phone/send-code', async (req, res) => {
             }
         );
 
-        console.log('短信验证码已经保存到 Redis');
-        console.log('Redis Key:', redisKey);
+
+
 
         // 8. 生成短信内容
         const message =
@@ -2102,11 +2416,12 @@ app.post('/api/account/phone/send-code', async (req, res) => {
 
         // 9. 发送短信
         await sendSms(
+            phone_country_code,
             normalizedPhone,
             message
         );
 
-        console.log('短信发送函数执行完成');
+
 
         // 10. 返回结果
         return res.json({
@@ -2119,10 +2434,10 @@ app.post('/api/account/phone/send-code', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('发送短信验证码失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -2130,6 +2445,9 @@ app.post('/api/account/phone/send-code', async (req, res) => {
         });
     }
 });
+
+
+
 // ==============================
 // 手机号注册
 // 注册成功后直接登录
@@ -2137,16 +2455,19 @@ app.post('/api/account/phone/send-code', async (req, res) => {
 
 app.post('/api/account/phone/register', async (req, res) => {
 
-    console.log('==============================');
-    console.log('手机号注册请求');
-    console.log('==============================');
+
+
+
 
     try {
 
         const {
             phone,
             code,
-            password
+            password,
+            country,
+            phone_country,
+            phone_country_code
         } = req.body;
 
         // ==============================
@@ -2195,10 +2516,24 @@ app.post('/api/account/phone/register', async (req, res) => {
         const normalizedPhone =
             phone.trim();
 
-        console.log(
-            '手机号:',
-            normalizedPhone
+
+        // ==============================
+        // 8. 查询手机号是否已经注册
+        // ==============================
+
+        const [existingUsers] = await db_pool.execute(
+            'SELECT id FROM users WHERE phone = ? LIMIT 1',
+            [normalizedPhone]
         );
+
+        // 手机号已经注册，不允许重复注册
+        if (existingUsers.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: '该手机号已经注册'
+            });
+        }
+
 
         // ==============================
         // 5. 查询 Redis 验证码
@@ -2210,15 +2545,9 @@ app.post('/api/account/phone/register', async (req, res) => {
         const savedCode =
             await redisClient.get(redisKey);
 
-        console.log(
-            'Redis 验证码:',
-            savedCode
-        );
 
-        console.log(
-            '用户提交验证码:',
-            code
-        );
+
+
 
         // ==============================
         // 6. 验证码不存在
@@ -2246,22 +2575,77 @@ app.post('/api/account/phone/register', async (req, res) => {
 
         }
 
-        console.log('验证码验证成功');
+
+
 
         // ==============================
-        // 8. 创建用户
-        // ==============================
-        //
-        // 目前没有数据库
-        // 暂时模拟 user_id
+        // 9. 生成用户 ID
         // ==============================
 
-    
+        // 使用当前秒级时间戳作为初始用户 ID
+        let userId = Math.floor(Date.now() / 1000);
 
-        console.log(
-            '创建用户:',
-            userId
+        // 如果 ID 已存在，就加 1，直到找到未使用的 ID
+        while (true) {
+
+            const [existingIds] = await db_pool.execute(
+                'SELECT id FROM users WHERE id = ? LIMIT 1',
+                [userId]
+            );
+
+            // ID 不存在，可以使用
+            if (existingIds.length === 0) {
+                break;
+            }
+
+            // ID 已存在，加 1 后继续检查
+            userId++;
+        }
+
+        // ==============================
+        // 10. 密码加密
+        // ==============================
+
+        // 使用 bcrypt 对密码进行哈希处理
+        const bcrypt = require('bcrypt');
+
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // ==============================
+        // 11. 创建用户
+        // ==============================
+
+        await db_pool.execute(
+            `INSERT INTO users (
+                id,
+                phone,
+                country,
+                phone_country,
+                phone_country_code,
+                password,
+                nickname,
+                avatar_url,
+                status,
+                created_at,
+                updated_at,
+                last_login_at,
+                last_login_ip
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), ?)`,
+            [
+                userId,
+                normalizedPhone,
+                country,
+                phone_country,
+                phone_country_code,
+                hashedPassword,
+                'user',
+                null,
+                1,
+                req.ip
+            ]
         );
+
+
 
         // ==============================
         // 9. 生成 Token
@@ -2270,10 +2654,7 @@ app.post('/api/account/phone/register', async (req, res) => {
         const token =
             crypto.randomBytes(32).toString('hex');
 
-        console.log(
-            '生成 Token:',
-            token
-        );
+
 
         // ==============================
         // 10. 保存 Token 到 Redis
@@ -2294,9 +2675,7 @@ app.post('/api/account/phone/register', async (req, res) => {
             }
         );
 
-        console.log(
-            'Token 已保存到 Redis'
-        );
+
 
         // ==============================
         // 11. 删除注册验证码
@@ -2304,9 +2683,7 @@ app.post('/api/account/phone/register', async (req, res) => {
 
         await redisClient.del(redisKey);
 
-        console.log(
-            '注册验证码已经删除'
-        );
+
 
         // ==============================
         // 12. 返回注册 + 登录成功
@@ -2317,7 +2694,8 @@ app.post('/api/account/phone/register', async (req, res) => {
             message: '注册成功并已登录',
             data: {
                 user_id: userId,
-                phone: normalizedPhone,
+                account: normalizedPhone,
+                account_type: 'phone',
                 token: token,
                 expires_in: 30 * 24 * 60 * 60
             }
@@ -2325,10 +2703,10 @@ app.post('/api/account/phone/register', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('手机号注册失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -2339,28 +2717,16 @@ app.post('/api/account/phone/register', async (req, res) => {
 
 });
 
-//需要发送短信验证码
-
-
-
-
-//防攻击验证码生成接口
-
-
-
-
 
 // ==============================
 // 邮箱 / 手机号+ 密码登录
 // ==============================
 
-
-
 app.post('/api/account/login/password', async (req, res) => {
 
-    console.log('==============================');
-    console.log('账号密码登录');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -2490,26 +2856,17 @@ app.post('/api/account/login/password', async (req, res) => {
                 userX - correctX
             );
 
-        console.log(
-            '用户 X:',
-            userX
-        );
 
-        console.log(
-            '正确 X:',
-            correctX
-        );
 
-        console.log(
-            '误差:',
-            difference
-        );
+
+
+
 
         // ==============================
         // 10. 滑动验证码验证失败
         // ==============================
 
-        if (difference > tolerance) {
+        if (!Number.isFinite(difference) || difference > tolerance) {
 
             return res.status(400).json({
                 success: false,
@@ -2518,9 +2875,7 @@ app.post('/api/account/login/password', async (req, res) => {
 
         }
 
-        console.log(
-            '滑动验证码验证成功'
-        );
+
 
         // ==============================
         // 11. 删除滑动验证码
@@ -2538,15 +2893,9 @@ app.post('/api/account/login/password', async (req, res) => {
         const normalizedAccount =
             account.trim().toLowerCase();
 
-        console.log(
-            '登录账号:',
-            normalizedAccount
-        );
 
-        console.log(
-            '登录平台:',
-            platform
-        );
+
+
 
         // ==============================
         // 13. 判断账号类型
@@ -2566,41 +2915,108 @@ app.post('/api/account/login/password', async (req, res) => {
 
         }
 
-        console.log(
-            '账号类型:',
-            accountType
+
+
+
+        // ==============================
+        // 14. 根据邮箱或手机号查询用户
+        // ==============================
+
+        let sql;
+        let params;
+
+        // 根据账号类型选择查询条件
+        if (accountType === 'email') {
+
+            sql = `
+                SELECT id, email, phone, password, status
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+            `;
+
+            params = [normalizedAccount];
+
+        } else {
+
+            sql = `
+                SELECT id, email, phone, password, status
+                FROM users
+                WHERE phone = ?
+                LIMIT 1
+            `;
+
+
+            params = [account.trim()];
+        }
+
+        // 查询数据库
+        const [users] = await db_pool.execute(sql, params);
+
+        // 账号不存在
+        if (users.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: '账号或密码错误'
+            });
+        }
+
+        // 获取数据库中的用户信息
+        const dbUser = users[0];
+
+        // ==============================
+        // 15. 检查用户状态
+        // ==============================
+
+        // status = 1 表示正常用户
+        if (dbUser.status !== 1) {
+            return res.status(403).json({
+                success: false,
+                message: '账号当前不可登录'
+            });
+        }
+
+        // ==============================
+        // 16. 验证密码
+        // ==============================
+
+        // 数据库中的 password 保存的是 bcrypt 哈希值
+        const passwordMatch = await bcrypt.compare(
+            password,
+            dbUser.password
         );
 
+        // 密码错误
+        if (!passwordMatch) {
+            return res.status(401).json({
+                success: false,
+                message: '账号或密码错误'
+            });
+        }
+
         // ==============================
-        // 14. 暂时模拟用户 ID
+        // 17. 获取真实用户 ID
         // ==============================
 
-        // TODO：
-        // 以后接数据库后，
-        // 根据邮箱 / 手机号查询真正的 user_id
+        const userId = dbUser.id;
 
-        const userId = 10001;
+        // ==============================
+        // 18. 更新最后登录时间和 IP
+        // ==============================
 
-        console.log(
-            '用户 ID:',
-            userId
+        await db_pool.execute(
+            `UPDATE users
+            SET last_login_at = NOW(),
+                last_login_ip = ?,
+                updated_at = NOW()
+            WHERE id = ?`,
+            [req.ip, userId]
         );
 
-        // ==============================
-        // 15. TODO：数据库验证密码
-        // ==============================
 
-        // 以后这里：
-        //
-        // 1. 根据 accountType 查询用户
-        // 2. 查询密码 Hash
-        // 3. 使用 bcrypt / argon2 验证 password
-        //
-        // 目前暂时跳过
 
-        console.log(
-            '暂时跳过数据库密码验证'
-        );
+
+
 
         // ==============================
         // 16. 生成统一 Token
@@ -2609,10 +3025,7 @@ app.post('/api/account/login/password', async (req, res) => {
         const token =
             crypto.randomBytes(32).toString('hex');
 
-        console.log(
-            '生成 Token:',
-            token
-        );
+
 
         // ==============================
         // 17. Redis Session Key
@@ -2647,14 +3060,9 @@ app.post('/api/account/login/password', async (req, res) => {
             }
         );
 
-        console.log(
-            'Session 已保存到 Redis'
-        );
 
-        console.log(
-            'Redis Key:',
-            sessionKey
-        );
+
+
 
         // ==============================
         // 20. Web 登录
@@ -2670,19 +3078,19 @@ app.post('/api/account/login/password', async (req, res) => {
 
                     // 本地 HTTP 测试
                     // 正式 HTTPS 改成 true
-                    secure: false,
+                    secure: process.env.NODE_ENV === 'production',
 
                     sameSite: 'lax',
 
                     // 30 天
                     maxAge:
-                        expiresIn * 1000
+                        expiresIn * 1000,
+                    // 整个网站都可以携带这个 Cookie
+                    path: '/'
                 }
             );
 
-            console.log(
-                'Web Cookie 已设置'
-            );
+
 
             return res.json({
                 success: true,
@@ -2703,9 +3111,7 @@ app.post('/api/account/login/password', async (req, res) => {
 
         if (platform === 'app') {
 
-            console.log(
-                'App Token 登录成功'
-            );
+
 
             return res.json({
                 success: true,
@@ -2723,10 +3129,10 @@ app.post('/api/account/login/password', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('账号密码登录失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -2743,9 +3149,9 @@ app.post('/api/account/login/password', async (req, res) => {
 // ==============================
 app.post('/api/account/email/login/send-code', async (req, res) => {
 
-    console.log('==============================');
-    console.log('发送邮箱登录验证码');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -2806,7 +3212,7 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
             });
         }
 
-        console.log('captcha_token 验证成功');
+
 
         // ==============================
         // 4. captcha_token 使用一次后删除
@@ -2821,7 +3227,7 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
         const normalizedEmail =
             email.trim().toLowerCase();
 
-        console.log('用户邮箱:', normalizedEmail);
+
 
         // ==============================
         // 6. 生成 6 位登录验证码
@@ -2831,7 +3237,7 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
             100000 + Math.random() * 900000
         ).toString();
 
-        console.log('生成登录验证码:', code);
+
 
         // ==============================
         // 7. Redis Key
@@ -2853,8 +3259,8 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
             }
         );
 
-        console.log('登录验证码已经保存到 Redis');
-        console.log('Redis Key:', redisKey);
+
+
 
         // ==============================
         // 9. 发送邮件
@@ -2879,10 +3285,10 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('发送邮箱登录验证码失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -2892,17 +3298,18 @@ app.post('/api/account/email/login/send-code', async (req, res) => {
     }
 
 });
-// 邮箱 + 邮箱验证码登录
-// ==============================
+
+
+
 // ==============================
 // 邮箱验证码登录
 // ==============================
 
 app.post('/api/account/login/email/code', async (req, res) => {
 
-    console.log('==============================');
-    console.log('邮箱验证码登录');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -3064,20 +3471,11 @@ app.post('/api/account/login/email/code', async (req, res) => {
             );
 
 
-        console.log(
-            '用户 X:',
-            userX
-        );
 
-        console.log(
-            '正确 X:',
-            correctX
-        );
 
-        console.log(
-            '误差:',
-            difference
-        );
+
+
+
 
 
         // ==============================
@@ -3085,7 +3483,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
         // ==============================
 
         if (
-            difference > tolerance
+            !Number.isFinite(difference) || difference > tolerance
         ) {
 
             return res.status(400).json({
@@ -3096,9 +3494,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
         }
 
 
-        console.log(
-            '滑动验证码验证成功'
-        );
+
 
 
         // ==============================
@@ -3111,9 +3507,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
         );
 
 
-        console.log(
-            '滑块验证码已使用并删除'
-        );
+
 
 
         // ==============================
@@ -3124,10 +3518,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
             email.trim().toLowerCase();
 
 
-        console.log(
-            '登录邮箱:',
-            normalizedEmail
-        );
+
 
 
         // ==============================
@@ -3148,15 +3539,9 @@ app.post('/api/account/login/email/code', async (req, res) => {
             );
 
 
-        console.log(
-            'Redis 验证码:',
-            savedCode
-        );
 
-        console.log(
-            '用户验证码:',
-            code
-        );
+
+
 
 
         // ==============================
@@ -3189,9 +3574,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
         }
 
 
-        console.log(
-            '邮箱验证码验证成功'
-        );
+
 
 
         // ==============================
@@ -3204,25 +3587,58 @@ app.post('/api/account/login/email/code', async (req, res) => {
         );
 
 
-        console.log(
-            '邮箱验证码已使用并删除'
-        );
+
 
 
         // ==============================
-        // 22. 暂时模拟用户 ID
+        // 22. 查询数据库中的用户
         // ==============================
 
-        // TODO：
-        // 以后数据库根据邮箱查询真正的 user_id
-
-        const userId = 10001;
-
-
-        console.log(
-            '用户 ID:',
-            userId
+        const [users] = await db_pool.execute(
+            `
+            SELECT id, email, status
+            FROM users
+            WHERE email = ?
+            LIMIT 1
+            `,
+            [normalizedEmail]
         );
+
+        // 邮箱没有注册
+        if (users.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: '该邮箱尚未注册'
+            });
+        }
+
+        // 获取用户信息
+        const dbUser = users[0];
+
+        // 获取真实用户 ID
+        const userId = dbUser.id;
+
+        // 检查账号状态
+        if (dbUser.status !== 1) {
+            return res.status(403).json({
+                success: false,
+                message: '账号当前不可登录'
+            });
+        }
+
+        // 更新最后登录时间、IP 和更新时间
+        await db_pool.execute(
+            `
+            UPDATE users
+            SET last_login_at = NOW(),
+                last_login_ip = ?,
+                updated_at = NOW()
+            WHERE id = ?
+            `,
+            [req.ip, userId]
+        );
+
+
 
 
         // ==============================
@@ -3233,10 +3649,7 @@ app.post('/api/account/login/email/code', async (req, res) => {
             crypto.randomBytes(32).toString('hex');
 
 
-        console.log(
-            '生成 Token:',
-            token
-        );
+
 
 
         // ==============================
@@ -3262,33 +3675,21 @@ app.post('/api/account/login/email/code', async (req, res) => {
 
         await redisClient.set(
             sessionKey,
-
             JSON.stringify({
-
                 user_id: userId,
-
-                email: normalizedEmail,
-
+                account: normalizedEmail,
+                account_type: 'email',
                 login_type: 'email_code',
-
                 platform: platform
-
             }),
-
             {
                 EX: expiresIn
             }
         );
 
 
-        console.log(
-            'Session 已保存到 Redis'
-        );
 
-        console.log(
-            'Redis Key:',
-            sessionKey
-        );
+
 
 
         // ==============================
@@ -3301,46 +3702,40 @@ app.post('/api/account/login/email/code', async (req, res) => {
                 'token',
                 token,
                 {
-
                     httpOnly: true,
 
                     // 本地 HTTP 测试
                     // 正式 HTTPS 改成 true
-                    secure: false,
+                    secure: process.env.NODE_ENV === 'production',
 
                     sameSite: 'lax',
 
+                    // 30 天
                     maxAge:
-                        expiresIn * 1000
-
+                        expiresIn * 1000,
+                    // 整个网站都可以携带这个 Cookie
+                    path: '/'
                 }
             );
 
 
-            console.log(
-                'Web Cookie 已设置'
-            );
+
 
 
             return res.json({
-
                 success: true,
-
                 message: '登录成功',
-
                 data: {
-
                     user_id: userId,
-
-                    email: normalizedEmail,
-
+                    account: normalizedEmail,
+                    account_type: 'email',
                     expires_in: expiresIn
-
                 }
-
             });
 
+
         }
+
 
 
         // ==============================
@@ -3349,29 +3744,20 @@ app.post('/api/account/login/email/code', async (req, res) => {
 
         if (platform === 'app') {
 
-            console.log(
-                'App Token 登录成功'
-            );
+
+
 
 
             return res.json({
-
                 success: true,
-
                 message: '登录成功',
-
                 data: {
-
                     user_id: userId,
-
-                    email: normalizedEmail,
-
+                    account: normalizedEmail,
+                    account_type: 'email',
                     token: token,
-
                     expires_in: expiresIn
-
                 }
-
             });
 
         }
@@ -3379,21 +3765,13 @@ app.post('/api/account/login/email/code', async (req, res) => {
 
     } catch (error) {
 
-        console.error(
-            '=============================='
-        );
 
-        console.error(
-            '邮箱验证码登录失败'
-        );
 
-        console.error(
-            error
-        );
 
-        console.error(
-            '=============================='
-        );
+
+
+
+
 
 
         return res.status(500).json({
@@ -3410,15 +3788,18 @@ app.post('/api/account/login/email/code', async (req, res) => {
 
 
 
-// 发送登录手机号验证码接口  
+// 发送登录手机号验证码接口
 app.post('/api/account/phone/login/send-code', async (req, res) => {
 
 
-    console.log('==============================');
-    console.log('发送手机号登录验证码');
-    console.log('==============================');
+
+
 
     try {
+
+        // ==============================
+        // 1. 检查 IP 短信发送频率
+        // ==============================
 
         const allowed = await checkIpRateLimit(
             req.ip,
@@ -3433,16 +3814,23 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
             });
         }
 
+        // ==============================
+        // 2. 获取请求参数
+        // ==============================
+
         const {
             phone,
             captcha_token
         } = req.body;
 
         // ==============================
-        // 1. 检查手机号
+        // 3. 检查手机号
         // ==============================
 
-        if (!phone) {
+        if (
+            typeof phone !== 'string' ||
+            !phone.trim()
+        ) {
             return res.status(400).json({
                 success: false,
                 message: '请输入手机号'
@@ -3450,7 +3838,7 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
         }
 
         // ==============================
-        // 2. 检查 captcha_token
+        // 4. 检查滑块验证令牌
         // ==============================
 
         if (!captcha_token) {
@@ -3461,7 +3849,72 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
         }
 
         // ==============================
-        // 3. 验证 captcha_token
+        // 5. 统一手机号格式
+        // 手机号不包含国家区号
+        // ==============================
+
+        const normalizedPhone = phone.trim();
+
+        // ==============================
+        // 6. 查询数据库中的手机号和国家区号
+        // ==============================
+
+        const [users] = await db_pool.execute(
+            `
+            SELECT id, phone, phone_country_code, status
+            FROM users
+            WHERE phone = ?
+            LIMIT 1
+            `,
+            [normalizedPhone]
+        );
+
+        // 手机号没有注册
+        if (users.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: '该手机号尚未注册'
+            });
+        }
+
+        // 获取用户信息
+        const dbUser = users[0];
+
+        // 检查账号状态
+        if (dbUser.status !== 1) {
+            return res.status(403).json({
+                success: false,
+                message: '账号当前不可登录'
+            });
+        }
+
+        // ==============================
+        // 7. 获取手机号国家区号
+        // 例如 +86、+1、+65
+        // ==============================
+
+        const phoneCountryCode = dbUser.phone_country_code;
+
+        if (
+            typeof phoneCountryCode !== 'string' ||
+            !/^\+\d{1,4}$/.test(phoneCountryCode)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: '该手机号的国家区号未设置或格式错误'
+            });
+        }
+
+        // ==============================
+        // 8. 拼接完整国际手机号
+        // 例如 +86 和 13800138000
+        // ==============================
+
+        const fullPhone =
+            `${phoneCountryCode}${normalizedPhone}`;
+
+        // ==============================
+        // 9. 检查滑块验证令牌
         // ==============================
 
         const captchaTokenKey =
@@ -3477,42 +3930,49 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
             });
         }
 
-        console.log('captcha_token 验证成功');
-
         // ==============================
-        // 4. captcha_token 使用一次后删除
+        // 10. 删除已使用的滑块验证令牌
         // ==============================
 
         await redisClient.del(captchaTokenKey);
 
         // ==============================
-        // 5. 统一手机号格式
+        // 11. 生成 6 位短信验证码
+        // 文件顶部需要引入 crypto
         // ==============================
 
-        const normalizedPhone =
-            phone.trim();
-
-        console.log('用户手机号:', normalizedPhone);
-
-        // ==============================
-        // 6. 生成 6 位登录验证码
-        // ==============================
-
-        const code = Math.floor(
-            100000 + Math.random() * 900000
+        const code = crypto.randomInt(
+            100000,
+            1000000
         ).toString();
 
-        console.log('生成登录验证码:', code);
-
         // ==============================
-        // 7. Redis Key
+        // 12. 生成 Redis 验证码 Key
         // ==============================
 
         const redisKey =
             `phone_login_code:${normalizedPhone}`;
 
         // ==============================
-        // 8. 保存验证码
+        // 13. 生成短信内容
+        // ==============================
+
+        const message =
+            `您的登录验证码是：${code}，5分钟内有效。`;
+
+        // ==============================
+        // 14. 发送短信
+        // 只发送一次
+        // ==============================
+
+        await sendSms(
+            phoneCountryCode,
+            normalizedPhone,
+            message
+        );
+
+        // ==============================
+        // 15. 短信发送成功后保存验证码
         // 5 分钟过期
         // ==============================
 
@@ -3524,29 +3984,8 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
             }
         );
 
-        console.log('登录验证码已经保存到 Redis');
-        console.log('Redis Key:', redisKey);
-
         // ==============================
-        // 9. 短信内容
-        // ==============================
-
-        const message =
-            `您的登录验证码是：${code}，5分钟内有效。`;
-
-        // ==============================
-        // 10. 发送短信
-        // ==============================
-
-        await sendSms(
-            normalizedPhone,
-            message
-        );
-
-        console.log('短信发送函数执行完成');
-
-        // ==============================
-        // 11. 返回结果
+        // 16. 返回结果
         // ==============================
 
         return res.json({
@@ -3559,10 +3998,10 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('发送手机号登录验证码失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -3575,21 +4014,15 @@ app.post('/api/account/phone/login/send-code', async (req, res) => {
 
 
 
-
-
 // ==============================
 // 手机号 + 手机验证码登录
 // ==============================
 
-// ==============================
-// 手机号验证码登录
-// ==============================
-
 app.post('/api/account/login/phone/code', async (req, res) => {
 
-    console.log('==============================');
-    console.log('手机号验证码登录');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -3751,20 +4184,11 @@ app.post('/api/account/login/phone/code', async (req, res) => {
             );
 
 
-        console.log(
-            '用户 X:',
-            userX
-        );
 
-        console.log(
-            '正确 X:',
-            correctX
-        );
 
-        console.log(
-            '误差:',
-            difference
-        );
+
+
+
 
 
         // ==============================
@@ -3772,7 +4196,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         // ==============================
 
         if (
-            difference > tolerance
+            !Number.isFinite(difference) || difference > tolerance
         ) {
 
             return res.status(400).json({
@@ -3783,9 +4207,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         }
 
 
-        console.log(
-            '滑动验证码验证成功'
-        );
+
 
 
         // ==============================
@@ -3798,9 +4220,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         );
 
 
-        console.log(
-            '滑块验证码已使用并删除'
-        );
+
 
 
         // ==============================
@@ -3811,10 +4231,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
             phone.trim();
 
 
-        console.log(
-            '手机号:',
-            normalizedPhone
-        );
+
 
 
         // ==============================
@@ -3835,15 +4252,9 @@ app.post('/api/account/login/phone/code', async (req, res) => {
             );
 
 
-        console.log(
-            'Redis 验证码:',
-            savedCode
-        );
 
-        console.log(
-            '用户验证码:',
-            code
-        );
+
+
 
 
         // ==============================
@@ -3876,9 +4287,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         }
 
 
-        console.log(
-            '手机验证码验证成功'
-        );
+
 
 
         // ==============================
@@ -3891,25 +4300,59 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         );
 
 
-        console.log(
-            '手机验证码已使用并删除'
-        );
+
 
 
         // ==============================
-        // 22. 暂时模拟用户 ID
+        // 22. 查询数据库中的用户
         // ==============================
 
-        // TODO：
-        // 以后数据库根据手机号查询真正的 user_id
-
-        const userId = 10001;
-
-
-        console.log(
-            '用户 ID:',
-            userId
+        const [users] = await db_pool.execute(
+            `
+            SELECT id, phone, status
+            FROM users
+            WHERE phone = ?
+            LIMIT 1
+            `,
+            [normalizedPhone]
         );
+
+        // 检查手机号是否已注册
+        if (users.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: '该手机号尚未注册'
+            });
+        }
+
+        // 获取用户信息
+        const dbUser = users[0];
+
+        // 获取真实用户 ID
+        const userId = dbUser.id;
+
+        // 检查账号状态
+        if (dbUser.status !== 1) {
+            return res.status(403).json({
+                success: false,
+                message: '账号当前不可登录'
+            });
+        }
+
+        // 更新最后登录时间、登录 IP 和更新时间
+        await db_pool.execute(
+            `
+            UPDATE users
+            SET last_login_at = NOW(),
+                last_login_ip = ?,
+                updated_at = NOW()
+            WHERE id = ?
+            `,
+            [req.ip, userId]
+        );
+
+
+
 
 
         // ==============================
@@ -3920,10 +4363,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
             crypto.randomBytes(32).toString('hex');
 
 
-        console.log(
-            '生成 Token:',
-            token
-        );
+
 
 
         // ==============================
@@ -3951,13 +4391,10 @@ app.post('/api/account/login/phone/code', async (req, res) => {
             sessionKey,
 
             JSON.stringify({
-
                 user_id: userId,
-
-                phone: normalizedPhone,
-
+                account: normalizedPhone,
+                account_type: 'phone',
                 login_type: 'phone_code',
-
                 platform: platform
 
             }),
@@ -3968,14 +4405,9 @@ app.post('/api/account/login/phone/code', async (req, res) => {
         );
 
 
-        console.log(
-            'Session 已保存到 Redis'
-        );
 
-        console.log(
-            'Redis Key:',
-            sessionKey
-        );
+
+
 
 
         // ==============================
@@ -3988,25 +4420,23 @@ app.post('/api/account/login/phone/code', async (req, res) => {
                 'token',
                 token,
                 {
-
                     httpOnly: true,
 
                     // 本地 HTTP 测试
                     // 正式 HTTPS 改成 true
-                    secure: false,
+                    secure: process.env.NODE_ENV === 'production',
 
                     sameSite: 'lax',
 
+                    // 30 天
                     maxAge:
-                        expiresIn * 1000
-
+                        expiresIn * 1000,
+                    // 整个网站都可以携带这个 Cookie
+                    path: '/'
                 }
             );
 
 
-            console.log(
-                'Web Cookie 已设置'
-            );
 
 
             return res.json({
@@ -4016,12 +4446,11 @@ app.post('/api/account/login/phone/code', async (req, res) => {
                 message: '登录成功',
 
                 data: {
-
                     user_id: userId,
-
-                    phone: normalizedPhone,
-
+                    account: normalizedPhone,
+                    account_type: 'phone',
                     expires_in: expiresIn
+
 
                 }
 
@@ -4036,9 +4465,7 @@ app.post('/api/account/login/phone/code', async (req, res) => {
 
         if (platform === 'app') {
 
-            console.log(
-                'App Token 登录成功'
-            );
+
 
 
             return res.json({
@@ -4048,14 +4475,12 @@ app.post('/api/account/login/phone/code', async (req, res) => {
                 message: '登录成功',
 
                 data: {
-
                     user_id: userId,
-
-                    phone: normalizedPhone,
-
+                    account: normalizedPhone,
+                    account_type: 'phone',
                     token: token,
-
                     expires_in: expiresIn
+
 
                 }
 
@@ -4065,21 +4490,13 @@ app.post('/api/account/login/phone/code', async (req, res) => {
 
     } catch (error) {
 
-        console.error(
-            '=============================='
-        );
 
-        console.error(
-            '手机号验证码登录失败'
-        );
 
-        console.error(
-            error
-        );
 
-        console.error(
-            '=============================='
-        );
+
+
+
+
 
 
         return res.status(500).json({
@@ -4101,9 +4518,9 @@ app.post('/api/account/login/phone/code', async (req, res) => {
 
 app.post('/api/account/token/check', async (req, res) => {
 
-    console.log('==============================');
-    console.log('检查 Token 有效性');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -4123,7 +4540,7 @@ app.post('/api/account/token/check', async (req, res) => {
 
         }
 
-        console.log('收到 Token:', token);
+
 
         // ==============================
         // 2. 查询 Redis
@@ -4140,8 +4557,8 @@ app.post('/api/account/token/check', async (req, res) => {
 
         if (!sessionData) {
 
-            console.log('Token 无效或已经过期');
-            console.log('要求用户重新登录');
+
+
 
             return res.status(401).json({
                 success: false,
@@ -4155,15 +4572,12 @@ app.post('/api/account/token/check', async (req, res) => {
         // 4. Token 有效
         // ==============================
 
-        console.log('Token 验证成功');
+
 
         const userData =
             JSON.parse(sessionData);
 
-        console.log(
-            '用户 ID:',
-            userData.user_id
-        );
+
 
         // ==============================
         // 5. 返回结果
@@ -4180,10 +4594,10 @@ app.post('/api/account/token/check', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Token 检查失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -4200,9 +4614,9 @@ app.post('/api/account/token/check', async (req, res) => {
 
 app.post('/api/account/token/refresh', async (req, res) => {
 
-    console.log('==============================');
-    console.log('延长 Token 有效期');
-    console.log('==============================');
+
+
+
 
     try {
 
@@ -4222,7 +4636,7 @@ app.post('/api/account/token/refresh', async (req, res) => {
 
         }
 
-        console.log('收到 Token:', token);
+
 
         // ==============================
         // 2. 查询 Redis
@@ -4239,8 +4653,8 @@ app.post('/api/account/token/refresh', async (req, res) => {
 
         if (!sessionData) {
 
-            console.log('Token 无效或已经过期');
-            console.log('要求用户重新登录');
+
+
 
             return res.status(401).json({
                 success: false,
@@ -4254,15 +4668,12 @@ app.post('/api/account/token/refresh', async (req, res) => {
         // 4. Token 有效
         // ==============================
 
-        console.log('Token 验证成功');
+
 
         const userData =
             JSON.parse(sessionData);
 
-        console.log(
-            '用户 ID:',
-            userData.user_id
-        );
+
 
         // ==============================
         // 5. 延长 30 天
@@ -4276,9 +4687,7 @@ app.post('/api/account/token/refresh', async (req, res) => {
             expiresIn
         );
 
-        console.log(
-            'Token 有效期已延长 30 天'
-        );
+
 
         // ==============================
         // 6. 返回成功
@@ -4296,10 +4705,10 @@ app.post('/api/account/token/refresh', async (req, res) => {
 
     } catch (error) {
 
-        console.error('==============================');
-        console.error('Token 延期失败');
-        console.error(error);
-        console.error('==============================');
+
+
+
+
 
         return res.status(500).json({
             success: false,
@@ -4344,7 +4753,7 @@ app.post('/api/account/logout', async (req, res) => {
 
     } catch (error) {
 
-        console.error('退出登录失败:', error);
+
 
         return res.status(500).json({
             success: false,
@@ -4372,9 +4781,14 @@ app.post('/api/account/logout', async (req, res) => {
 
 
 
-app.listen(3000, () => {
+// app.listen(3000, () => {
 
-    console.log('用户账号 API 已启动');
-    console.log('端口: 3000');
+//     console.log('用户账号 API 已启动');
+//     console.log('端口: 3000');
 
-});   
+// });
+
+// Preserve the original connection-pool export for other account modules.
+module.exports.app = app;
+module.exports.redisClient = redisClient;
+module.exports.redisReady = redisReady;

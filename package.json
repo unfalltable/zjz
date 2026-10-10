@@ -15,6 +15,8 @@
     "build:admin": "node scripts/run-framework.mjs build --surface admin",
     "typecheck": "tsc --noEmit",
     "test:api": "node scripts/test-api.mjs",
+    "test:commerce": "node --experimental-strip-types --test tests/*.test.mjs web/lib/*.test.mjs",
+    "test:d1": "node --experimental-strip-types scripts/test-d1.mjs",
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"

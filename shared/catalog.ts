@@ -14,6 +14,9 @@ export type StoreProduct = {
   color: "blue" | "ice" | "coral";
   inventory: number;
   fulfillmentMode: "marketplace" | "self" | "supplier";
+  priceCents?: number;
+  compareAtCents?: number | null;
+  inventoryReserved?: false;
   badge: Record<StoreLocale, string>;
   description: Record<StoreLocale, string>;
   detail: Record<StoreLocale, string>;
@@ -23,6 +26,8 @@ export const CART_STORAGE_KEY = "miova_cart_v1";
 export const FAVORITES_STORAGE_KEY = "miova_favorites_v1";
 export const DESTINATION_STORAGE_KEY = "miova_destination_v1";
 
+// Presentation/import templates only. Live price, sale status and inventory must come from D1.
+// Kept as an alias for older clients while they move to the catalogue endpoint.
 export const products: StoreProduct[] = [
   {
     id: "kumo",

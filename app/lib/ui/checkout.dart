@@ -70,10 +70,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final model = StoreScope.of(context), copy = Copy(model.locale);
-    if (model.catalog == null) {
+    if (model.catalog == null || model.error != null || model.loading) {
       return Scaffold(
         appBar: AppBar(title: Text(copy.t('delivery'))),
-        body: const ShopScreen(),
+        body: SafeArea(
+          child: model.loading
+              ? CatalogLoading(copy: copy)
+              : CatalogUnavailable(copy: copy, retry: model.reload),
+        ),
       );
     }
     return PopScope(
@@ -115,6 +119,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                         const SizedBox(height: 24),
                         Text(copy.t('paymentNotice')),
+                        const SizedBox(height: 16),
+                        Text(
+                          '${copy.t('taxes')}: ${copy.t('taxNotEstimated')}',
+                        ),
                         const SizedBox(height: 24),
                         FilledButton(
                           onPressed: () => context.go('/track'),
@@ -123,7 +131,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ],
                     )
                   : model.count == 0
-                  ? EmptyFinds(copy: copy)
+                  ? SingleChildScrollView(child: EmptyFinds(copy: copy))
                   : Form(
                       key: _form,
                       child: AutofillGroup(
@@ -244,6 +252,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             const SizedBox(height: 8),
                             Text(
                               '${copy.t('shipping')}: ${money(_shipping(model.subtotal))}',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${copy.t('taxes')}: ${copy.t('taxNotEstimated')}',
                             ),
                             const SizedBox(height: 16),
                             Text(

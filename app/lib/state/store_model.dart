@@ -20,6 +20,7 @@ class StoreModel extends ChangeNotifier {
   final Set<String> favorites = {};
   Future<void> _writes = Future.value();
   bool _disposed = false;
+  int _catalogRequest = 0;
   String? _checkoutKey, _checkoutHash;
 
   Future<void> initialize() async {
@@ -50,11 +51,14 @@ class StoreModel extends ChangeNotifier {
   }
 
   Future<void> reload() async {
+    final request = ++_catalogRequest;
     loading = true;
     error = null;
     _notify();
     try {
-      catalog = await api.catalog();
+      final latest = await api.catalog();
+      if (_disposed || request != _catalogRequest) return;
+      catalog = latest;
       if (!catalog!.destinations.containsKey(destination)) destination = 'US';
       final ids = catalog!.products.map((product) => product.id).toSet();
       bag.removeWhere((id, _) => !ids.contains(id));
@@ -66,6 +70,7 @@ class StoreModel extends ChangeNotifier {
       }
       bag.removeWhere((_, quantity) => quantity <= 0);
     } catch (exception) {
+      if (_disposed || request != _catalogRequest) return;
       error = exception.toString();
     }
     loading = false;
@@ -87,7 +92,7 @@ class StoreModel extends ChangeNotifier {
   void quantity(String id, int quantity) {
     final item = product(id);
     if (item == null) return;
-    final next = quantity.clamp(0, min(10, item.inventory)).toInt();
+    final next = quantity.clamp(0, max(0, min(10, item.inventory))).toInt();
     if (next == 0) {
       bag.remove(id);
     } else {

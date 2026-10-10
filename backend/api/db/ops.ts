@@ -1,341 +1,94 @@
 import { getD1 } from "./index";
-import type {
-  FulfillmentMode,
-  OpsOrder,
-  OpsProduct,
-  OpsSnapshot,
-  OrderStatus,
-} from "@shared/ops-types";
+import { getOpsProducts } from "./catalog";
+import { statusProgress, validateOrderTransition, validateStockAdjustment } from "@backend/domain/commerce";
+import { updateOrderStatusSql, insertOrderStatusEventSql, restockProductSql, insertInventoryEventSql } from "@backend/domain/commerce-sql";
+import type { FulfillmentMode, OpsAuditEvent, OpsOrder, OpsSnapshot, OrderStatus } from "@shared/ops-types";
 
-const seedOrders: OpsOrder[] = [
-  {
-    orderNumber: "MW-24091",
-    customerName: "Amara K.",
-    destination: "Berlin, DE",
-    productName: "Kumo Cloud Cat",
-    amountCents: 8900,
-    currency: "USD",
-    fulfillmentMode: "marketplace",
-    routeModes: ["marketplace"],
-    paymentStatus: "paid",
-    status: "purchase",
-    progress: 22,
-    createdAt: "2026-09-24T03:18:00.000Z",
-    updatedAt: "2026-09-24T04:05:00.000Z",
-  },
-  {
-    orderNumber: "MW-24088",
-    customerName: "Lucas M.",
-    destination: "Toronto, CA",
-    productName: "Nova Orb",
-    amountCents: 12900,
-    currency: "USD",
-    fulfillmentMode: "supplier",
-    routeModes: ["supplier"],
-    paymentStatus: "paid",
-    status: "packing",
-    progress: 46,
-    createdAt: "2026-09-24T01:42:00.000Z",
-    updatedAt: "2026-09-24T03:49:00.000Z",
-  },
-  {
-    orderNumber: "MW-24084",
-    customerName: "Mei L.",
-    destination: "Melbourne, AU",
-    productName: "Loop Mini",
-    amountCents: 6400,
-    currency: "USD",
-    fulfillmentMode: "self",
-    routeModes: ["self"],
-    paymentStatus: "paid",
-    status: "handoff",
-    progress: 70,
-    createdAt: "2026-09-23T22:17:00.000Z",
-    updatedAt: "2026-09-24T02:55:00.000Z",
-  },
-  {
-    orderNumber: "MW-24079",
-    customerName: "Theo R.",
-    destination: "Paris, FR",
-    productName: "Kumo Cloud Cat × 2",
-    amountCents: 17800,
-    currency: "USD",
-    fulfillmentMode: "marketplace",
-    routeModes: ["marketplace"],
-    paymentStatus: "paid",
-    status: "transit",
-    progress: 88,
-    createdAt: "2026-09-23T17:03:00.000Z",
-    updatedAt: "2026-09-24T02:12:00.000Z",
-  },
-];
+// Compatibility for the admin shell: an unavailable database must not look like live demo sales.
+export const demoSnapshot: OpsSnapshot = { orders: [], products: [], auditEvents: [] };
 
-const seedProducts: OpsProduct[] = [
-  {
-    sku: "KUMO-01",
-    name: "Kumo Cloud Cat",
-    stock: 42,
-    reserved: 12,
-    inbound: 80,
-    defaultFulfillment: "marketplace",
-    status: "active",
-    updatedAt: "2026-09-24T04:05:00.000Z",
-  },
-  {
-    sku: "NOVA-02",
-    name: "Nova Orb",
-    stock: 18,
-    reserved: 6,
-    inbound: 36,
-    defaultFulfillment: "supplier",
-    status: "active",
-    updatedAt: "2026-09-24T03:49:00.000Z",
-  },
-  {
-    sku: "LOOP-03",
-    name: "Loop Mini",
-    stock: 67,
-    reserved: 9,
-    inbound: 0,
-    defaultFulfillment: "self",
-    status: "active",
-    updatedAt: "2026-09-24T02:55:00.000Z",
-  },
-];
-
-export const demoSnapshot: OpsSnapshot = {
-  orders: seedOrders,
-  products: seedProducts,
-};
-
-const statusProgress: Record<OrderStatus, number> = {
-  payment_pending: 5,
-  purchase: 22,
-  packing: 46,
-  handoff: 70,
-  transit: 88,
-  delivered: 100,
-};
-
-type OrderRow = {
-  orderNumber: string;
-  customerName: string;
-  destination: string;
-  productName: string;
-  amountCents: number;
-  currency: string;
-  fulfillmentMode: FulfillmentMode;
-  paymentStatus: "pending" | "paid" | "failed" | "refunded";
-  lineItemsJson: string | null;
-  status: OrderStatus;
-  progress: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type ProductRow = {
-  sku: string;
-  name: string;
-  stock: number;
-  reserved: number;
-  inbound: number;
-  defaultFulfillment: FulfillmentMode;
-  status: "active" | "paused";
-  updatedAt: string;
-};
+type OrderRow = Omit<OpsOrder, "routeModes"> & { id: string; lineItemsJson: string | null; version: number };
 
 export async function getOpsSnapshot(ownerId: string): Promise<OpsSnapshot> {
-  const db = getD1();
-  await ensureWorkspace(ownerId);
-
-  const [orderResult, productResult] = await Promise.all([
-    db
-      .prepare(
-        `SELECT
-          order_number AS orderNumber,
-          customer_name AS customerName,
-          destination,
-          product_name AS productName,
-          amount_cents AS amountCents,
-          currency,
-          fulfillment_mode AS fulfillmentMode,
-          payment_status AS paymentStatus,
-          line_items_json AS lineItemsJson,
-          status,
-          progress,
-          created_at AS createdAt,
-          updated_at AS updatedAt
-        FROM orders
-        WHERE owner_id = ?
-        ORDER BY created_at DESC`
-      )
-      .bind(ownerId)
-      .all<OrderRow>(),
-    db
-      .prepare(
-        `SELECT
-          sku,
-          name,
-          stock,
-          reserved,
-          inbound,
-          default_fulfillment AS defaultFulfillment,
-          status,
-          updated_at AS updatedAt
-        FROM products
-        WHERE owner_id = ?
-        ORDER BY name ASC`
-      )
-      .bind(ownerId)
-      .all<ProductRow>(),
+  const [orders, products, auditEvents] = await Promise.all([
+    getD1().prepare(`SELECT id, order_number AS orderNumber, customer_name AS customerName,
+      destination, product_name AS productName, amount_cents AS amountCents, currency,
+      fulfillment_mode AS fulfillmentMode, payment_status AS paymentStatus,
+      line_items_json AS lineItemsJson, status, progress, version,
+      created_at AS createdAt, updated_at AS updatedAt
+      FROM orders WHERE owner_id = ? ORDER BY created_at DESC LIMIT 200`).bind(ownerId).all<OrderRow>(),
+    getOpsProducts(ownerId),
+    getAuditEvents(ownerId),
   ]);
-
   return {
-    orders: orderResult.results.map((order) => ({
-      ...order,
-      routeModes: parseRouteModes(order.lineItemsJson, order.fulfillmentMode),
-    })),
-    products: productResult.results,
+    orders: orders.results.map(({ id: _id, lineItemsJson, ...order }) => ({
+      ...order, routeModes: parseRouteModes(lineItemsJson, order.fulfillmentMode), inventoryReserved: false,
+    })), products, auditEvents,
   };
 }
 
-export async function setOrderStatus(
-  ownerId: string,
-  orderNumber: string,
-  status: OrderStatus
-) {
-  const current = await getD1()
-    .prepare(
-      `SELECT payment_status AS paymentStatus
-       FROM orders
-       WHERE owner_id = ? AND order_number = ?
-       LIMIT 1`
-    )
-    .bind(ownerId, orderNumber)
-    .first<{ paymentStatus: string }>();
-
+export async function setOrderStatus(ownerId: string, orderNumber: string, status: OrderStatus, expectedVersion?: number) {
+  const db = getD1();
+  const current = await db.prepare(`SELECT status, payment_status AS paymentStatus, version
+    FROM orders WHERE owner_id = ? AND order_number = ? LIMIT 1`).bind(ownerId, orderNumber)
+    .first<{ status: OrderStatus; paymentStatus: OpsOrder["paymentStatus"]; version: number }>();
   if (!current) return "not_found" as const;
-  if (current.paymentStatus !== "paid" && status !== "payment_pending") {
-    return "unpaid" as const;
-  }
-
+  if (expectedVersion !== undefined && expectedVersion !== current.version) return "conflict" as const;
+  const transition = validateOrderTransition(current.status, status, current.paymentStatus);
+  if (transition === "unchanged") return "updated" as const;
+  if (transition !== "allowed") return transition;
   const now = new Date().toISOString();
-  const result = await getD1()
-    .prepare(
-      `UPDATE orders
-       SET status = ?, progress = ?, updated_at = ?
-       WHERE owner_id = ? AND order_number = ?`
-    )
-    .bind(status, statusProgress[status], now, ownerId, orderNumber)
-    .run();
+  // The payment and version guards live in the UPDATE, not just in the preceding read.
+  // D1 batch rolls the mutation back if its audit INSERT fails.
+  const results = await db.batch([
+    db.prepare(updateOrderStatusSql).bind(status, statusProgress[status], now, ownerId, orderNumber, current.status, current.version),
+    db.prepare(insertOrderStatusEventSql).bind(crypto.randomUUID(), current.status, ownerId, now, ownerId, orderNumber),
+  ]);
+  return (results[0].meta.changes ?? 0) > 0 ? "updated" as const : "conflict" as const;
+}
 
-  return (result.meta.changes ?? 0) > 0 ? ("updated" as const) : ("not_found" as const);
+export async function addProductStock(ownerId: string, sku: string, quantity: number, note?: string): Promise<boolean> {
+  if (!validateStockAdjustment(quantity, note)) {
+    throw new Error("invalid_stock_adjustment");
+  }
+  const db = getD1();
+  const now = new Date().toISOString();
+  const results = await db.batch([
+    db.prepare(restockProductSql).bind(quantity, now, ownerId, sku, quantity),
+    db.prepare(insertInventoryEventSql).bind(crypto.randomUUID(), quantity, ownerId, now, note?.trim() || null, ownerId, sku),
+  ]);
+  return (results[0].meta.changes ?? 0) > 0;
+}
+
+async function getAuditEvents(ownerId: string): Promise<OpsAuditEvent[]> {
+  const events = await getD1().prepare(`SELECT id, time, entity, entityId, action, actorId, details FROM (
+    SELECT e.id, e.created_at AS time, 'order' AS entity, o.order_number AS entityId,
+      e.event_type AS action, e.actor_id AS actorId,
+      json_object('from', e.from_status, 'to', e.to_status, 'version', e.order_version) AS details
+    FROM order_events e JOIN orders o ON o.id = e.order_id WHERE e.owner_id = ? AND o.owner_id = ?
+    UNION ALL
+    SELECT e.id, e.created_at AS time, 'inventory' AS entity, p.sku AS entityId,
+      'restocked' AS action, e.actor_id AS actorId,
+      json_object('quantity', e.quantity, 'stock', e.resulting_stock, 'note', e.note) AS details
+    FROM inventory_events e JOIN products p ON p.id = e.product_id WHERE e.owner_id = ? AND p.owner_id = ?
+    UNION ALL
+    SELECT e.id, e.created_at AS time, 'catalog' AS entity, p.sku AS entityId,
+      e.action, e.actor_id AS actorId, e.details_json AS details
+    FROM catalog_events e JOIN products p ON p.id = e.product_id WHERE e.owner_id = ? AND p.owner_id = ?
+  ) ORDER BY time DESC, id DESC LIMIT 100`).bind(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId).all<OpsAuditEvent>();
+  return events.results;
 }
 
 function parseRouteModes(value: string | null, fallback: FulfillmentMode): FulfillmentMode[] {
   if (!value) return [fallback];
   try {
-    const parsed = JSON.parse(value) as Array<{ fulfillmentMode?: string }>;
-    const modes = Array.from(
-      new Set(
-        parsed
-          .map((item) => item.fulfillmentMode)
-          .filter((mode): mode is FulfillmentMode =>
-            mode === "marketplace" || mode === "self" || mode === "supplier"
-          )
-      )
-    );
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [fallback];
+    const modes = Array.from(new Set(parsed.flatMap((item: unknown) => {
+      if (!item || typeof item !== "object" || !("fulfillmentMode" in item)) return [];
+      const mode = item.fulfillmentMode;
+      return mode === "marketplace" || mode === "self" || mode === "supplier" ? [mode] : [];
+    }))) as FulfillmentMode[];
     return modes.length ? modes : [fallback];
-  } catch {
-    return [fallback];
-  }
-}
-
-export async function addProductStock(ownerId: string, sku: string, quantity: number) {
-  const now = new Date().toISOString();
-  const result = await getD1()
-    .prepare(
-      `UPDATE products
-       SET stock = stock + ?, updated_at = ?
-       WHERE owner_id = ? AND sku = ?`
-    )
-    .bind(quantity, now, ownerId, sku)
-    .run();
-
-  return (result.meta.changes ?? 0) > 0;
-}
-
-async function ensureWorkspace(ownerId: string) {
-  const db = getD1();
-  const [orderCount, productCount] = await Promise.all([
-    db
-      .prepare("SELECT COUNT(*) AS count FROM orders WHERE owner_id = ?")
-      .bind(ownerId)
-      .first<{ count: number }>(),
-    db
-      .prepare("SELECT COUNT(*) AS count FROM products WHERE owner_id = ?")
-      .bind(ownerId)
-      .first<{ count: number }>(),
-  ]);
-
-  const statements = [];
-
-  if (!orderCount?.count) {
-    for (const order of seedOrders) {
-      statements.push(
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO orders (
-              id, owner_id, order_number, customer_name, destination, product_name,
-              amount_cents, currency, fulfillment_mode, status, progress, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .bind(
-            `${ownerId}:${order.orderNumber}`,
-            ownerId,
-            order.orderNumber,
-            order.customerName,
-            order.destination,
-            order.productName,
-            order.amountCents,
-            order.currency,
-            order.fulfillmentMode,
-            order.status,
-            order.progress,
-            order.createdAt,
-            order.updatedAt
-          )
-      );
-    }
-  }
-
-  if (!productCount?.count) {
-    for (const product of seedProducts) {
-      statements.push(
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO products (
-              id, owner_id, sku, name, stock, reserved, inbound,
-              default_fulfillment, status, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .bind(
-            `${ownerId}:${product.sku}`,
-            ownerId,
-            product.sku,
-            product.name,
-            product.stock,
-            product.reserved,
-            product.inbound,
-            product.defaultFulfillment,
-            product.status,
-            product.updatedAt
-          )
-      );
-    }
-  }
-
-  if (statements.length) {
-    await db.batch(statements);
-  }
+  } catch { return [fallback]; }
 }

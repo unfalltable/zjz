@@ -4,7 +4,8 @@ import {
   getChatGPTUser,
 } from "@backend/auth";
 import { env } from "cloudflare:workers";
-import { demoSnapshot, getOpsSnapshot } from "@backend/db/ops";
+import { getOpsSnapshot } from "@backend/db/ops";
+import type { OpsSnapshot } from "@shared/ops-types";
 
 import { OpsDashboard } from "./ops-dashboard";
 
@@ -18,7 +19,7 @@ export default async function OpsPage() {
   const configuredStore = runtime.STOREFRONT_URL?.trim();
   const storefrontUrl = configuredStore && /^https?:\/\//.test(configuredStore)
     ? configuredStore : runtime.APP_SURFACE === "admin" ? null : "/";
-  let snapshot = demoSnapshot;
+  let snapshot: OpsSnapshot = { orders: [], products: [], auditEvents: [] };
   let databaseAvailable = true;
 
   if (owner) {

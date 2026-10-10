@@ -1,6 +1,22 @@
 {
+  "name": "account-api",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start:account": "node --env-file-if-exists=.env user_account/server.cjs",
+    "test:account": "node --test user_account/user_account_api.test.cjs"
+  },
   "dependencies": {
+    "apple-signin-auth": "2.1.0",
+    "bcrypt": "6.0.0",
+    "cookie-parser": "1.4.7",
     "express": "^5.2.1",
-    "google-auth-library": "^11.1.0"
+    "google-auth-library": "^11.1.0",
+    "mysql2": "3.24.5",
+    "redis": "6.3.0",
+    "sharp": "0.35.5",
+    "svg-captcha": "1.4.0"
   }
 }

@@ -113,30 +113,10 @@ class _ShopScreenState extends State<ShopScreen> {
   Widget build(BuildContext context) {
     final model = StoreScope.of(context), copy = Copy(model.locale);
     if (model.loading && model.catalog == null) {
-      return const Center(child: CircularProgressIndicator());
+      return CatalogLoading(copy: copy);
     }
     if (model.catalog == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                copy.t('unavailable'),
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 16),
-              Text(model.error ?? '', textAlign: TextAlign.center),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: model.reload,
-                child: Text(copy.t('retry')),
-              ),
-            ],
-          ),
-        ),
-      );
+      return CatalogUnavailable(copy: copy, retry: model.reload);
     }
     final items = model.catalog!.products
         .where(
@@ -153,6 +133,32 @@ class _ShopScreenState extends State<ShopScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (model.loading) ...[
+            LinearProgressIndicator(semanticsLabel: copy.t('loadingCatalog')),
+            const SizedBox(height: 16),
+          ],
+          if (model.error != null) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(copy.t('unavailableBody')),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: model.reload,
+                      child: Text(copy.t('retry')),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (!widget.savedOnly) ...[
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -208,7 +214,9 @@ class _ShopScreenState extends State<ShopScreen> {
                   .toList(),
             ),
           const SizedBox(height: 16),
-          if (items.isEmpty)
+          if (model.catalog!.products.isEmpty && !widget.savedOnly)
+            CatalogEmpty(copy: copy, retry: model.reload)
+          else if (items.isEmpty)
             EmptyFinds(copy: copy)
           else
             LayoutBuilder(
@@ -299,8 +307,10 @@ class ProductCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton(
                     onPressed:
-                        (model.bag[product.id] ?? 0) >=
-                            min(10, product.inventory)
+                        model.loading ||
+                            model.error != null ||
+                            (model.bag[product.id] ?? 0) >=
+                                min(10, product.inventory)
                         ? null
                         : () {
                             model.quantity(
@@ -342,6 +352,12 @@ class ProductImage extends StatelessWidget {
     model.api.uri(product.image).toString(),
     fit: BoxFit.cover,
     semanticLabel: product.name,
+    loadingBuilder: (context, child, progress) => progress == null
+        ? child
+        : ColoredBox(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Center(child: CircularProgressIndicator()),
+          ),
     errorBuilder: (_, _, _) => ColoredBox(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: const Center(child: Icon(Icons.image_outlined, size: 40)),
@@ -367,8 +383,14 @@ class ProductScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: product == null
-            ? EmptyFinds(copy: copy)
+        child: model.loading
+            ? CatalogLoading(copy: copy)
+            : model.error != null || model.catalog == null
+            ? CatalogUnavailable(copy: copy, retry: model.reload)
+            : product == null
+            ? SingleChildScrollView(
+                child: EmptyFinds(copy: copy, messageKey: 'productUnavailable'),
+              )
             : ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
@@ -407,8 +429,9 @@ class ProductScreen extends StatelessWidget {
 }
 
 class EmptyFinds extends StatelessWidget {
-  const EmptyFinds({super.key, required this.copy});
+  const EmptyFinds({super.key, required this.copy, this.messageKey = 'empty'});
   final Copy copy;
+  final String messageKey;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(32),
@@ -417,7 +440,11 @@ class EmptyFinds extends StatelessWidget {
       children: [
         const Icon(Icons.shopping_bag_outlined, size: 48),
         const SizedBox(height: 24),
-        Text(copy.t('empty'), style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          copy.t(messageKey),
+          style: Theme.of(context).textTheme.titleLarge,
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 24),
         OutlinedButton(
           onPressed: () => context.go('/'),
@@ -428,13 +455,96 @@ class EmptyFinds extends StatelessWidget {
   );
 }
 
+class CatalogLoading extends StatelessWidget {
+  const CatalogLoading({super.key, required this.copy});
+  final Copy copy;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Semantics(
+        liveRegion: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ExcludeSemantics(child: CircularProgressIndicator()),
+            const SizedBox(height: 24),
+            Text(copy.t('loadingCatalog'), textAlign: TextAlign.center),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class CatalogUnavailable extends StatelessWidget {
+  const CatalogUnavailable({
+    super.key,
+    required this.copy,
+    required this.retry,
+  });
+  final Copy copy;
+  final VoidCallback retry;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              copy.t('unavailable'),
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(copy.t('unavailableBody'), textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: retry, child: Text(copy.t('retry'))),
+        ],
+      ),
+    ),
+  );
+}
+
+class CatalogEmpty extends StatelessWidget {
+  const CatalogEmpty({super.key, required this.copy, required this.retry});
+  final Copy copy;
+  final VoidCallback retry;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 32),
+    child: Column(
+      children: [
+        Text(
+          copy.t('catalogEmpty'),
+          style: Theme.of(context).textTheme.titleLarge,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        Text(copy.t('catalogEmptyBody'), textAlign: TextAlign.center),
+        const SizedBox(height: 24),
+        OutlinedButton(onPressed: retry, child: Text(copy.t('retry'))),
+      ],
+    ),
+  );
+}
+
 class BagScreen extends StatelessWidget {
   const BagScreen({super.key});
   @override
   Widget build(BuildContext context) {
     final model = StoreScope.of(context), copy = Copy(model.locale);
-    if (model.catalog == null) return const ShopScreen();
-    if (model.count == 0) return Center(child: EmptyFinds(copy: copy));
+    if (model.loading) return CatalogLoading(copy: copy);
+    if (model.catalog == null || model.error != null) {
+      return CatalogUnavailable(copy: copy, retry: model.reload);
+    }
+    if (model.count == 0) {
+      return SingleChildScrollView(child: EmptyFinds(copy: copy));
+    }
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [

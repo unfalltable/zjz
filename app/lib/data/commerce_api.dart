@@ -53,8 +53,73 @@ class CommerceApi {
     }
   }
 
-  Future<Catalog> catalog() async =>
-      Catalog.fromJson(await _request('/api/v1/catalog'));
+  Future<Catalog> catalog() async {
+    const incomplete = ApiException(
+      'The product catalog is incomplete. Please try again.',
+    );
+    final products = <Product>[];
+    final productIds = <String>{};
+    final cursors = <String>{};
+    Catalog? firstPage;
+    var path = '/api/v1/catalog';
+    var paginated = false;
+    var pages = 0;
+
+    try {
+      while (true) {
+        if (pages >= 1000) throw incomplete;
+        pages += 1;
+        final json = await _request(path);
+        final page = Catalog.fromJson(json);
+        firstPage ??= page;
+        for (final product in page.products) {
+          if (product.id.trim().isEmpty || !productIds.add(product.id)) {
+            throw incomplete;
+          }
+          products.add(product);
+        }
+
+        // Only the first response may be from a legacy, single-page service.
+        // Once pagination starts, a missing cursor envelope could truncate it.
+        if (!json.containsKey('pageInfo')) {
+          if (paginated) throw incomplete;
+          break;
+        }
+        paginated = true;
+        final info = json['pageInfo'];
+        if (info is! Map<String, dynamic> ||
+            info['hasMore'] is! bool ||
+            !info.containsKey('nextCursor')) {
+          throw incomplete;
+        }
+        final hasMore = info['hasMore'] as bool;
+        final cursor = info['nextCursor'];
+        if (!hasMore) {
+          if (cursor != null) throw incomplete;
+          break;
+        }
+        if (cursor is! String ||
+            cursor.trim().isEmpty ||
+            cursor.length > 4096 ||
+            page.products.isEmpty ||
+            !cursors.add(cursor)) {
+          throw incomplete;
+        }
+        // Treat the cursor as opaque, not as a URL or query fragment.
+        path = Uri(
+          path: '/api/v1/catalog',
+          queryParameters: {'cursor': cursor},
+        ).toString();
+      }
+      // The caller receives a complete catalog, never a successful partial page.
+      return Catalog(products: products, destinations: firstPage.destinations);
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw incomplete;
+    }
+  }
+
   Future<OrderReceipt> createOrder(Map<String, dynamic> input) async =>
       OrderReceipt.fromJson(await _request('/api/v1/orders', input));
   Future<Map<String, dynamic>> track(String orderNumber, String email) async =>
