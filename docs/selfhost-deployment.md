@@ -58,6 +58,8 @@ Node 后台验证仅接受后台服务上的已验证 Basic 凭据，不接受�
 
 本部署的独立 Certbot 位于 `/opt/miova-certbot`，不替换宝塔或其他应用的证书工具。续期使用 `/etc/miova/letsencrypt`、`/var/lib/miova-acme`、`/var/log/miova-acme` 的隔离目录；HTTP-01 验证目录必须一直可达。执行 `miova-certificate.service` 验证检查流程，使用 Certbot `renew --dry-run` 验证挑战与续期，不将 staging 证书用于用户访问。
 
+定时器已提供随机延迟，所以服务使用 `--no-random-sleep-on-renew`，避免 Certbot 内部随机等待超出服务超时；手动模拟续期也可加此参数。部署配置可单独更新 `/etc/systemd/system` 后 `daemon-reload`，不改已发布应用目录；记录应用提交与配置提交，不将配置更新误当成数据库或应用重建。
+
 Nginx 访问日志格式仅记录路径，不记录查询字符串、Authorization 或请求正文；错误日志仍需受限保存，不要将其未经脱敏共享。库存、订单安全仍由应用逻辑保障，边缘限流不替代这些检查。Nginx body 限制为公开商城 `64k`、后台 `1m`，修改需同时核对应用请求限制。公网没有设置不可撤回的长时 HSTS，以便初次发布或证书配置失败时安全回退。
 
 ## 后台访问
