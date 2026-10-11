@@ -3,53 +3,17 @@
 import Image from "@/components/product-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  BadgeCheck,
-  Clock3,
-  CreditCard,
-  Globe2,
-  Heart,
-  MapPin,
-  Minus,
-  PackageCheck,
-  Plus,
-  Search,
-  ShieldCheck,
-  ShoppingBag,
-  Sparkles,
-  Star,
-  Truck,
-} from "lucide-react";
+import { ArrowRight, ChevronDown, Globe2, Heart, House, MapPin, Minus, PackageCheck, Plus, Search, ShieldCheck, ShoppingBag, SlidersHorizontal, Smartphone, Star, Tag, X } from "lucide-react";
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
-import {
-  CART_STORAGE_KEY,
-  DESTINATION_STORAGE_KEY,
-  FAVORITES_STORAGE_KEY,
-  destinations,
-  type DestinationCode,
-  type StoreCategory,
-  type StoreLocale,
-} from "@shared/catalog";
+import { CART_STORAGE_KEY, DESTINATION_STORAGE_KEY, FAVORITES_STORAGE_KEY, destinations, type DestinationCode, type StoreCategory, type StoreLocale } from "@shared/catalog";
 import { useLiveCatalog, useStoreLocale } from "@/hooks/use-storefront";
 import { catalogWindowLimit, expandCatalogWindow } from "@/lib/catalog-window";
+import { discoverProducts, hasProductDiscount, productDiscountPercent, productPriceCents, type PriceBand, type ProductCollection, type ProductSort } from "@/lib/product-discovery";
+import { storefrontCopy } from "@/lib/storefront-copy";
 import { parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
-
-type Locale = StoreLocale;
-type Category = StoreCategory;
-type SortOrder = "featured" | "price-low" | "price-high";
 
 type WebMCPTool = {
   name: string;
@@ -58,229 +22,13 @@ type WebMCPTool = {
   annotations?: Record<string, boolean>;
   execute: (input: Record<string, unknown>) => Promise<string>;
 };
+type WebMCPDocument = Document & { modelContext?: { registerTool: (tool: WebMCPTool, options?: { signal?: AbortSignal }) => Promise<void> } };
 
-type WebMCPDocument = Document & {
-  modelContext?: {
-    registerTool: (tool: WebMCPTool, options?: { signal?: AbortSignal }) => Promise<void>;
-  };
-};
-
-const copy = {
-  en: {
-    announcement: "Discover everyday finds from Asia",
-    delivery: "Save a shopping request · no payment collected",
-    search: "Search products and categories",
-    deliverTo: "Deliver to",
-    sort: "Sort",
-    sortOptions: ["Featured", "Price: low to high", "Price: high to low"],
-    save: "Save for later",
-    saved: "Saved",
-    categoryNav: ["Shop all", "Home & living", "Tech", "Bags & accessories"],
-    eyebrow: "CURATED IN ASIA · DELIVERED WORLDWIDE",
-    title: "Good finds. Fewer borders.",
-    body: "Useful, unusual and well-made products from independent makers and trusted suppliers—priced clearly and shipped to your door.",
-    primaryCta: "Discover products",
-    secondaryCta: "Browse the selection",
-    trust: ["Shipping estimate before saving", "No payment collected", "Order request tracking"],
-    shopBy: "Shop by category",
-    shopByBody: "Start with what you need. Stay for what you did not know existed.",
-    categoryCards: [
-      ["Home & living", "Objects that make a space feel yours"],
-      ["Smart tech", "Small upgrades for everyday life"],
-      ["Carry & wear", "Light, useful and ready to move"],
-    ],
-    bestKicker: "Current selection",
-    bestTitle: "Discover products",
-    bestBody: "Browse the products currently listed in our store.",
-    viewAll: "View all products",
-    showMore: "Show more products",
-    allShown: "All matching products shown",
-    showing: (shown: number, total: number) => `Showing ${shown} of ${total} products`,
-    add: "Quick add",
-    added: "Added to bag",
-    quickView: "Quick view",
-    productPage: "View full product details",
-    rating: "customer rating",
-    noResults: "Nothing matched that search. Try ‘speaker’, ‘bag’ or ‘home’.",
-    clearSearch: "Clear search",
-    catalogLoading: "Loading the latest products…",
-    catalogError: "Products are temporarily unavailable. Please try again.",
-    catalogEmpty: "No products are available yet. Check back soon.",
-    retry: "Try again",
-    soldOut: "Currently unavailable",
-    limit: "Your bag already has the available quantity (up to 10 per item).",
-    bagUpdated: "Your bag was updated because availability changed. Review it before saving.",
-    recovered: "Invalid saved bag data was removed. Please review your bag.",
-    storageNotice: "This browser cannot save your bag. Keep this page open; saving preferences may be unavailable.",
-    promoKicker: "THE MIOVA EDIT",
-    promoTitle: "Fresh utility, not more clutter.",
-    promoBody: "Every product is selected for usefulness, build quality and a point of view. The assortment can change; the standard does not.",
-    promoCta: "Explore the edit",
-    shippingTitle: "Know what you are saving.",
-    shippingBody: "Online payment is not active yet. A saved request is not a paid order and does not reserve stock or arrange dispatch.",
-    shippingSteps: [
-      ["Estimated totals", "Review goods and delivery estimates. Import duties are not yet calculated."],
-      ["Unpaid request", "Saving charges nothing and does not reserve inventory."],
-      ["Check the status", "Use your order number and email to look up the saved request."],
-    ],
-    cart: "Your bag",
-    cartDesc: "This is an unpaid request. Stock is not reserved; import duties are not yet calculated.",
-    checkout: "Save order request",
-    secureCheckout: "No charge · online payment activation pending",
-    track: "Track order",
-    subtotal: "Subtotal",
-    empty: "Your bag is empty.",
-    productNote: "Current availability · stock is not reserved",
-    services: ["Clear product information", "Payment activation pending", "No inventory reservation", "Request status tracking"],
-    footer: "Interesting goods from Asia, made easy to buy anywhere.",
-    merchant: "Merchant console",
-  },
-  zh: {
-    announcement: "发现来自亚洲的日常好物",
-    delivery: "保存购物需求 · 不收取付款",
-    search: "搜索商品与品类",
-    deliverTo: "配送至",
-    sort: "排序",
-    sortOptions: ["综合推荐", "价格从低到高", "价格从高到低"],
-    save: "收藏商品",
-    saved: "已收藏",
-    categoryNav: ["全部商品", "家居生活", "数码科技", "箱包配饰"],
-    eyebrow: "亚洲精选 · 全球送达",
-    title: "发现好物，跨境不难。",
-    body: "从独立设计者和可信供应商中精选实用、有趣、品质在线的商品，价格清楚，直接送到你家。",
-    primaryCta: "发现商品",
-    secondaryCta: "浏览当前选品",
-    trust: ["保存前查看运费估算", "不收取付款", "订单需求状态查询"],
-    shopBy: "按品类逛",
-    shopByBody: "从你需要的开始，也可能发现从未想到的好东西。",
-    categoryCards: [
-      ["家居生活", "让空间更像你的实用好物"],
-      ["智能科技", "给日常加一点聪明升级"],
-      ["箱包穿戴", "轻巧、实用，随时出发"],
-    ],
-    bestKicker: "当前选品",
-    bestTitle: "发现好物",
-    bestBody: "浏览店内目前已上架的商品。",
-    viewAll: "查看全部商品",
-    showMore: "查看更多商品",
-    allShown: "已显示全部匹配商品",
-    showing: (shown: number, total: number) => `已显示 ${shown} / ${total} 件商品`,
-    add: "快速加入",
-    added: "已加入购物袋",
-    quickView: "快速查看",
-    productPage: "查看完整商品详情",
-    rating: "顾客评分",
-    noResults: "没有匹配的商品，可以试试“音响”“包”或“家居”。",
-    clearSearch: "清除搜索",
-    catalogLoading: "正在加载最新商品…",
-    catalogError: "商品目录暂时无法加载，请重试。",
-    catalogEmpty: "目前暂无可售商品，请稍后再来。",
-    retry: "重试",
-    soldOut: "暂不可售",
-    limit: "购物袋数量已达到当前库存或单件 10 件上限。",
-    bagUpdated: "商品库存有变化，已调整购物袋。保存前请重新确认。",
-    recovered: "已清理异常的购物袋数据，请重新确认商品。",
-    storageNotice: "浏览器无法保存购物袋，请保持页面打开；偏好设置可能无法保留。",
-    promoKicker: "妙物本周精选",
-    promoTitle: "真正有用，不制造杂物。",
-    promoBody: "每件商品都经过实用性、品质与设计感筛选。商品可以更换，但选品标准不会。",
-    promoCta: "探索本周精选",
-    shippingTitle: "先看清，再保存购物需求。",
-    shippingBody: "在线支付尚未开通。保存的是未付款需求，不锁定库存，也不会安排发货。",
-    shippingSteps: [
-      ["查看估算", "核对商品与运费估算；进口税费尚未计算。"],
-      ["未付款需求", "保存不会扣款，也不会占用库存。"],
-      ["查询需求状态", "使用订单号与邮箱查看已保存的需求。"],
-    ],
-    cart: "购物袋",
-    cartDesc: "这是未付款需求，不占用库存；进口税费尚未计算。",
-    checkout: "保存订单需求",
-    secureCheckout: "不会扣款 · 在线支付待资质开通",
-    track: "查询订单",
-    subtotal: "小计",
-    empty: "购物袋还是空的。",
-    productNote: "当前可售数量 · 不锁定库存",
-    services: ["商品信息清楚", "支付能力待开通", "不锁定库存", "需求状态查询"],
-    footer: "亚洲有趣好物，让世界各地都能轻松购买。",
-    merchant: "商家工作台",
-  },
-  es: {
-    announcement: "Descubre productos para cada día desde Asia",
-    delivery: "Guarda una solicitud · sin cobrar pagos",
-    search: "Buscar productos y categorías",
-    deliverTo: "Enviar a",
-    sort: "Ordenar",
-    sortOptions: ["Destacados", "Precio: menor a mayor", "Precio: mayor a menor"],
-    save: "Guardar",
-    saved: "Guardado",
-    categoryNav: ["Ver todo", "Hogar", "Tecnología", "Bolsos y accesorios"],
-    eyebrow: "SELECCIONADO EN ASIA · ENVIADO AL MUNDO",
-    title: "Buenos hallazgos. Menos fronteras.",
-    body: "Productos útiles, originales y bien hechos de creadores independientes y proveedores de confianza, con precios claros y entrega a domicilio.",
-    primaryCta: "Descubrir productos",
-    secondaryCta: "Ver la selección",
-    trust: ["Envío estimado antes de guardar", "Sin cobrar pagos", "Estado de la solicitud"],
-    shopBy: "Comprar por categoría",
-    shopByBody: "Empieza por lo que necesitas. Quédate por lo inesperado.",
-    categoryCards: [
-      ["Hogar", "Objetos que hacen tu espacio más tuyo"],
-      ["Tecnología", "Pequeñas mejoras para cada día"],
-      ["Bolsos y accesorios", "Ligeros, útiles y listos para salir"],
-    ],
-    bestKicker: "Selección actual",
-    bestTitle: "Descubre productos",
-    bestBody: "Explora los productos que están disponibles en nuestra tienda.",
-    viewAll: "Ver todos",
-    showMore: "Ver más productos",
-    allShown: "Se muestran todos los resultados",
-    showing: (shown: number, total: number) => `${shown} de ${total} productos`,
-    add: "Añadir",
-    added: "Añadido a la bolsa",
-    quickView: "Vista rápida",
-    productPage: "Ver todos los detalles",
-    rating: "valoración de clientes",
-    noResults: "No hay resultados. Prueba ‘altavoz’, ‘bolso’ u ‘hogar’.",
-    clearSearch: "Borrar búsqueda",
-    catalogLoading: "Cargando los productos actuales…",
-    catalogError: "Los productos no están disponibles. Inténtalo de nuevo.",
-    catalogEmpty: "Todavía no hay productos disponibles. Vuelve pronto.",
-    retry: "Reintentar",
-    soldOut: "No disponible",
-    limit: "La bolsa alcanzó las existencias disponibles o el límite de 10 unidades.",
-    bagUpdated: "Actualizamos la bolsa por cambios de disponibilidad. Revísala antes de guardar.",
-    recovered: "Eliminamos datos inválidos de la bolsa guardada. Revisa los productos.",
-    storageNotice: "Este navegador no puede guardar la bolsa. Mantén esta página abierta; puede que no se conserven las preferencias.",
-    promoKicker: "LA EDICIÓN MIOVA",
-    promoTitle: "Utilidad nueva, no más ruido.",
-    promoBody: "Elegimos cada producto por su utilidad, calidad y personalidad. El surtido cambia; el estándar no.",
-    promoCta: "Explorar la edición",
-    shippingTitle: "Revisa lo que estás guardando.",
-    shippingBody: "El pago en línea aún no está activo. Guardar una solicitud no cobra, no reserva existencias ni programa el envío.",
-    shippingSteps: [
-      ["Costes estimados", "Revisa productos y envío. Los aranceles todavía no se calculan."],
-      ["Solicitud sin pagar", "Guardar no cobra nada ni reserva existencias."],
-      ["Consulta el estado", "Usa el número de pedido y el correo para consultar tu solicitud."],
-    ],
-    cart: "Tu bolsa",
-    cartDesc: "Solicitud sin pagar. No reserva existencias; los aranceles todavía no se calculan.",
-    checkout: "Guardar solicitud",
-    secureCheckout: "Sin cargo · pago en proceso de activación",
-    track: "Seguir pedido",
-    subtotal: "Subtotal",
-    empty: "Tu bolsa está vacía.",
-    productNote: "Disponibilidad actual · existencias sin reservar",
-    services: ["Información clara", "Pago pendiente de activación", "Sin reservar existencias", "Estado de la solicitud"],
-    footer: "Productos interesantes de Asia, fáciles de comprar desde cualquier lugar.",
-    merchant: "Panel de vendedor",
-  },
-} as const;
-
-const categoryOrder: Category[] = ["all", "home", "tech", "wear"];
-const categoryImages = ["/products/kumo.webp", "/products/nova.webp", "/products/loop.webp"];
-const categoryValues: Category[] = ["home", "tech", "wear"];
-const trustIcons = [Truck, ShieldCheck, Search];
-const shippingIcons = [CreditCard, PackageCheck, Truck];
-const serviceIcons = [ShieldCheck, Clock3, BadgeCheck, Truck];
+const categoryOrder: StoreCategory[] = ["all", "home", "tech", "wear"];
+const categoryIcons = [House, Smartphone, ShoppingBag];
+const priceBands: PriceBand[] = ["any", "under-25", "25-50", "50-100", "100-plus"];
+const sortOrders: ProductSort[] = ["default", "price-low", "price-high"];
+const collectionOrder: ProductCollection[] = ["all", "deals", "saved"];
 
 export default function Home() {
   const router = useRouter();
@@ -288,48 +36,51 @@ export default function Home() {
   const { products, loading: catalogLoading, error: catalogError, reload: reloadCatalog } = useLiveCatalog();
   const [cart, setCart] = useState<Record<string, number>>({});
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
-  const [category, setCategory] = useState<Category>("all");
+  const [category, setCategory] = useState<StoreCategory>("all");
   const [search, setSearch] = useState("");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("featured");
+  const [sortOrder, setSortOrder] = useState<ProductSort>("default");
+  const [collection, setCollection] = useState<ProductCollection>("all");
+  const [priceBand, setPriceBand] = useState<PriceBand>("any");
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bagOpen, setBagOpen] = useState(false);
   const [productWindow, setProductWindow] = useState({ scope: "", limit: 24 });
   const [destination, setDestination] = useState<DestinationCode>("US");
   const [hydrated, setHydrated] = useState(false);
   const [bagNotice, setBagNotice] = useState<"recovered" | "bagUpdated" | "storageNotice" | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<(typeof products)[number] | null>(null);
-  const t = copy[locale];
-
+  // Keep only an ID: quick view always reflects the latest catalogue price and stock.
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const selectedProduct = products.find((product) => product.id === selectedProductId) ?? null;
+  const t = storefrontCopy[locale];
+  const money = useMemo(() => new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "es" ? "es-US" : "en-US", { style: "currency", currency: "USD" }), [locale]);
+  const price = (product: (typeof products)[number]) => money.format(productPriceCents(product) / 100);
+  const comparePrice = (product: (typeof products)[number]) => money.format((product.compareAtCents ?? Math.round((product.compareAt ?? 0) * 100)) / 100);
   const cartCount = useMemo(() => Object.values(cart).reduce((sum, value) => sum + value, 0), [cart]);
-  const cartTotal = useMemo(() => products.reduce((sum, product) => sum + (product.priceCents ?? Math.round(product.price * 100)) * (cart[product.id] ?? 0), 0) / 100, [cart, products]);
-  const matchingProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const filtered = products.filter((product) => {
-      const matchesCategory = category === "all" || product.category === category;
-      const matchesSearch = !query || `${product.name} ${product.description[locale]} ${product.detail[locale]}`.toLowerCase().includes(query);
-      return matchesCategory && matchesSearch;
-    });
-    if (sortOrder === "price-low") return [...filtered].sort((a, b) => a.price - b.price);
-    if (sortOrder === "price-high") return [...filtered].sort((a, b) => b.price - a.price);
-    return filtered;
-  }, [category, locale, products, search, sortOrder]);
-  // A different search starts at the first group; expanding never changes the bag.
-  const productScope = JSON.stringify([locale, category, search.trim().toLowerCase(), sortOrder]);
+  const cartTotal = useMemo(() => products.reduce((sum, product) => sum + productPriceCents(product) * (cart[product.id] ?? 0), 0) / 100, [cart, products]);
+  const savedCount = products.filter((product) => Object.hasOwn(favorites, product.id) && favorites[product.id] === true).length;
+  const categoryCounts = categoryOrder.map((value) => products.filter((product) => value === "all" || product.category === value).length);
+  const matchingProducts = useMemo(() => discoverProducts(products, { locale, category, query: search, sort: sortOrder, collection, priceBand, inStockOnly, favorites }), [locale, category, search, sortOrder, collection, priceBand, inStockOnly, favorites, products]);
+  const productScope = JSON.stringify([locale, category, search.trim().toLowerCase(), sortOrder, collection, priceBand, inStockOnly]);
   const productLimit = catalogWindowLimit(productWindow, productScope);
   const visibleProducts = matchingProducts.slice(0, productLimit);
-
+  const filterCount = Number(category !== "all") + Number(priceBand !== "any") + Number(inStockOnly) + Number(Boolean(search.trim()));
+  const collectionLabels = { all: t.all, deals: t.deals, saved: t.favorites };
   const scrollToProducts = () => scrollWithoutMotion(document.querySelector("#products"));
-  const chooseCategory = (value: Category) => { setCategory(value); setSearch(""); scrollToProducts(); };
+  const openShoppingHelp = () => document.querySelector<HTMLDetailsElement>("#shopping-help")?.setAttribute("open", "");
+  const resetFilters = () => { setCategory("all"); setSearch(""); setPriceBand("any"); setInStockOnly(false); setCollection("all"); setSortOrder("default"); };
+  const chooseCategory = (value: StoreCategory) => { setCategory(value); setSearch(""); setCollection("all"); scrollToProducts(); };
+  const chooseCollection = (value: ProductCollection) => { setCollection(value); scrollToProducts(); };
   const addToBag = useCallback((id: string) => {
     const product = products.find((item) => item.id === id);
     if (catalogLoading || catalogError || !product || (cart[id] ?? 0) >= productQuantityLimit(product)) {
       toast.error(t.limit);
-      return;
+      return false;
     }
     setCart((current) => ({ ...current, [id]: Math.min((current[id] ?? 0) + 1, productQuantityLimit(product)) }));
     toast.success(t.added);
+    return true;
   }, [cart, catalogError, catalogLoading, products, t.added, t.limit]);
-  const toggleFavorite = (id: string) => {
-    setFavorites((current) => ({ ...current, [id]: !current[id] }));
-  };
+  const toggleFavorite = (id: string) => setFavorites((current) => ({ ...current, [id]: !current[id] }));
   const changeQuantity = (id: string, amount: number) => {
     setCart((current) => {
       const product = products.find((item) => item.id === id);
@@ -342,24 +93,21 @@ export default function Home() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-    try {
-      const restored = parseShoppingBag(readBrowserValue(CART_STORAGE_KEY));
-      const storedFavorites = readBrowserValue(FAVORITES_STORAGE_KEY);
-      const storedDestination = readBrowserValue(DESTINATION_STORAGE_KEY) as DestinationCode | null;
-      setCart(restored.bag);
-      if (restored.recovered) setBagNotice("recovered");
-      if (storedFavorites) {
-        const parsed: unknown = JSON.parse(storedFavorites);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setFavorites(Object.fromEntries(Object.entries(parsed).filter(([id, saved]) => saved === true && !["__proto__", "constructor", "prototype"].includes(id))));
+      try {
+        const restored = parseShoppingBag(readBrowserValue(CART_STORAGE_KEY));
+        const storedFavorites = readBrowserValue(FAVORITES_STORAGE_KEY);
+        const storedDestination = readBrowserValue(DESTINATION_STORAGE_KEY) as DestinationCode | null;
+        setCart(restored.bag);
+        if (restored.recovered) setBagNotice("recovered");
+        if (storedFavorites) {
+          const parsed: unknown = JSON.parse(storedFavorites);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            setFavorites(Object.fromEntries(Object.entries(parsed).filter(([id, saved]) => saved === true && !["__proto__", "constructor", "prototype"].includes(id))));
+          }
         }
-      }
-      if (storedDestination && storedDestination in destinations) setDestination(storedDestination);
-    } catch {
-      writeBrowserValue(FAVORITES_STORAGE_KEY, null);
-    } finally {
-      setHydrated(true);
-    }
+        if (storedDestination && Object.hasOwn(destinations, storedDestination)) setDestination(storedDestination);
+      } catch { writeBrowserValue(FAVORITES_STORAGE_KEY, null); }
+      finally { setHydrated(true); }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -385,29 +133,26 @@ export default function Home() {
     const controller = new AbortController();
     const tools: WebMCPTool[] = [
       {
-        name: "search_miova_catalog",
-        description: "Search MIOVA products by keyword and optionally filter by category.",
+        name: "search_miova_catalog", description: "Search live MIOVA products by keyword, SKU and optional category.",
         inputSchema: { type: "object", properties: { query: { type: "string" }, category: { type: "string", enum: categoryOrder } }, required: ["query"] },
         annotations: { readOnlyHint: true, consequentialHint: false },
         execute: async (input) => {
           const query = typeof input.query === "string" ? input.query : "";
-          const requestedCategory = typeof input.category === "string" ? input.category : "all";
-          if (categoryOrder.includes(requestedCategory as Category)) setCategory(requestedCategory as Category);
-          setSearch(query); scrollToProducts();
-          const matches = products.filter((product) => `${product.name} ${product.description.en}`.toLowerCase().includes(query.toLowerCase()));
-          return JSON.stringify(matches.map(({ id, name, price, category: productCategory }) => ({ id, name, price, category: productCategory })));
+          const requested = typeof input.category === "string" && categoryOrder.includes(input.category as StoreCategory) ? input.category as StoreCategory : "all";
+          resetFilters(); setCategory(requested); setSearch(query); scrollToProducts();
+          const matches = discoverProducts(products, { locale, category: requested, query, sort: "default", collection: "all", priceBand: "any", inStockOnly: false, favorites: {} });
+          return JSON.stringify(matches.map(({ id, name, price, category: productCategory }) => ({ id, name, price, currency: "USD", category: productCategory })));
         },
       },
       {
-        name: "add_product_to_bag",
-        description: "Add a MIOVA catalog product to the shopping bag by product ID.",
+        name: "add_product_to_bag", description: "Add an available MIOVA product to the shopping bag. No charge or reservation.",
         inputSchema: { type: "object", properties: { productId: { type: "string", enum: products.map((product) => product.id) } }, required: ["productId"] },
         annotations: { readOnlyHint: false, consequentialHint: false },
         execute: async (input) => {
           const productId = typeof input.productId === "string" ? input.productId : "";
           const product = products.find((item) => item.id === productId);
           if (!product) return "Product not found.";
-          addToBag(productId); return `${product.name} added to the shopping bag.`;
+          return addToBag(productId) ? `${product.name} added to the shopping bag.` : "Product unavailable or quantity limit reached.";
         },
       },
     ];
@@ -415,112 +160,119 @@ export default function Home() {
     return () => controller.abort();
   }, [addToBag, catalogError, catalogLoading, locale, products]);
 
-  return (
-    <main className="site-shell store-shell">
-      <a className="skip-link" href="#products">Skip to products</a>
-      <Toaster position="bottom-center" />
-      <div className="store-announcement"><strong>{t.announcement}</strong><span>{t.delivery}</span></div>
+  const renderSearch = (mobile = false) => (
+    <form className={`market-search${mobile ? " market-search-mobile" : ""}`} role="search" onSubmit={(event) => { event.preventDefault(); scrollToProducts(); }}>
+      <label className="sr-only" htmlFor={mobile ? "mobile-product-search" : "product-search"}>{t.search}</label>
+      <input id={mobile ? "mobile-product-search" : "product-search"} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.search} maxLength={200} />
+      {search && <button className="market-search-clear" type="button" onClick={() => setSearch("")} aria-label={t.clearSearch}><X aria-hidden="true" /></button>}
+      <button className="market-search-submit" type="submit" aria-label={t.searchAction}><Search aria-hidden="true" /><span>{t.searchAction}</span></button>
+    </form>
+  );
 
+  return (
+    <main className="site-shell store-shell market-shell">
+      <a className="skip-link" href="#products">{t.skip}</a>
+      <Toaster position="bottom-center" />
+      <div className="store-announcement"><strong>{t.announcement}</strong><a href="/track">{t.track}<ArrowRight aria-hidden="true" /></a></div>
       <header className="store-header" id="top">
         <div className="store-header-main">
-          <a className="brand store-brand" href="#top" aria-label="MIOVA 妙物 home"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a>
-          <label className="store-search">
-            <Search aria-hidden="true" /><span className="sr-only">{t.search}</span>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && scrollToProducts()} placeholder={t.search} />
-            <span className="search-shortcut" aria-hidden="true">⌘ K</span>
-          </label>
+          <a className="brand store-brand" href="/" aria-label="MIOVA 妙物"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA<span className="market-brand-cn">妙物</span></span></a>
+          {renderSearch()}
           <div className="store-actions">
             <label className="store-destination"><MapPin aria-hidden="true" /><span>{t.deliverTo}</span>
-              <select value={destination} onChange={(event) => setDestination(event.target.value as DestinationCode)} aria-label={t.deliverTo}>
-                {Object.entries(destinations).map(([code, names]) => <option value={code} key={code}>{names[locale]}</option>)}
-              </select>
+              <select value={destination} onChange={(event) => setDestination(event.target.value as DestinationCode)} aria-label={t.deliverTo}>{Object.entries(destinations).map(([code, names]) => <option value={code} key={code}>{names[locale]}</option>)}</select>
             </label>
-            <label className="language-control store-language"><span className="sr-only">Language</span><Globe2 aria-hidden="true" />
-              <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)}><option value="en">EN · USD</option><option value="zh">中文 · USD</option><option value="es">ES · USD</option></select>
-            </label>
-            <Sheet>
-              <SheetTrigger asChild><Button className="bag-button store-bag" aria-label={`${t.cart}, ${cartCount} items`}><ShoppingBag aria-hidden="true" /><span>{cartCount}</span></Button></SheetTrigger>
-              <SheetContent className="cart-sheet">
-                <SheetHeader className="cart-header"><SheetTitle className="cart-title">{t.cart}</SheetTitle><SheetDescription>{cartCount ? t.cartDesc : t.empty}</SheetDescription></SheetHeader>
+            <label className="language-control store-language"><span className="sr-only">{t.language}</span><Globe2 aria-hidden="true" /><select aria-label={t.language} value={locale} onChange={(event) => setLocale(event.target.value as StoreLocale)}><option value="en">EN · USD</option><option value="zh">中文 · USD</option><option value="es">ES · USD</option></select></label>
+            <Sheet open={bagOpen} onOpenChange={setBagOpen}>
+              <SheetTrigger asChild><Button className="bag-button store-bag" aria-label={`${t.cart}, ${cartCount} ${t.items}`}><ShoppingBag aria-hidden="true" /><span>{cartCount}</span></Button></SheetTrigger>
+              <SheetContent className="cart-sheet market-sheet" closeLabel={t.close}>
+                <SheetHeader className="cart-header"><SheetTitle className="cart-title">{t.cart}</SheetTitle><SheetDescription>{cartCount ? t.cartDesc : t.emptyBody}</SheetDescription></SheetHeader>
                 {bagNotice && <p className="store-bag-notice" role="status">{t[bagNotice]}</p>}
-                <div className="cart-items">{products.filter((product) => cart[product.id]).map((product) => (
-                  <div className="cart-line" key={product.id}><Image src={product.image} alt={product.name} width={128} height={128} /><div><strong>{product.name}</strong><span>${product.price}</span>
-                    <div className="quantity-control" aria-label={`${product.name} quantity`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`Decrease ${product.name} quantity`}><Minus aria-hidden="true" /></button><span>{cart[product.id]}</span><button disabled={cart[product.id] >= productQuantityLimit(product)} onClick={() => changeQuantity(product.id, 1)} aria-label={`Increase ${product.name} quantity`}><Plus aria-hidden="true" /></button></div>
-                  </div></div>
-                ))}</div>
-                <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>${cartTotal.toFixed(2)}</strong></div><Button className="checkout-button" disabled={!cartCount || catalogLoading || catalogError || shoppingBagNeedsReview(cart, products)} onClick={() => router.push("/checkout")}>{t.checkout}</Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small></SheetFooter>
+                <div className="cart-items">
+                  {!cartCount && <div className="market-bag-empty"><ShoppingBag aria-hidden="true" /><h3>{t.empty}</h3><p>{t.emptyBody}</p><Button onClick={() => { setBagOpen(false); scrollToProducts(); }}>{t.continueShopping}</Button></div>}
+                  {products.filter((product) => cart[product.id]).map((product) => (
+                    <div className="cart-line" key={product.id}><Image src={product.image} alt={product.name} width={128} height={128} /><div><strong>{product.name}</strong><span>{price(product)}</span><div className="quantity-control" aria-label={`${product.name} ${t.items}`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`− ${product.name}`}><Minus aria-hidden="true" /></button><span>{cart[product.id]}</span><button disabled={cart[product.id] >= productQuantityLimit(product)} onClick={() => changeQuantity(product.id, 1)} aria-label={`+ ${product.name}`}><Plus aria-hidden="true" /></button></div></div></div>
+                  ))}
+                </div>
+                {cartCount > 0 && <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>{money.format(cartTotal)} <small>USD</small></strong></div><Button className="checkout-button" disabled={catalogLoading || catalogError || shoppingBagNeedsReview(cart, products)} onClick={() => router.push("/checkout")}>{t.checkout}<ArrowRight aria-hidden="true" /></Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small></SheetFooter>}
               </SheetContent>
             </Sheet>
           </div>
         </div>
-        <label className="store-search store-search-mobile"><Search aria-hidden="true" /><span className="sr-only">{t.search}</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && scrollToProducts()} placeholder={t.search} /></label>
-        <nav className="store-category-nav" aria-label="Shop categories">{categoryOrder.map((item, index) => <button key={item} onClick={() => chooseCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}<a href="/track">{t.track}</a><a href="#shipping">Shipping & returns</a></nav>
+        {renderSearch(true)}
+        <nav className="store-category-nav" aria-label={t.categories}>
+          {categoryOrder.map((item, index) => <button key={item} onClick={() => chooseCategory(item)} aria-pressed={category === item && collection === "all"}>{t.categoryNav[index]}</button>)}
+          <button onClick={() => chooseCollection("deals")} aria-pressed={collection === "deals"}><Tag aria-hidden="true" />{t.deals}</button>
+          <button className="market-nav-saved" onClick={() => { resetFilters(); chooseCollection("saved"); }} aria-pressed={collection === "saved"}><Heart aria-hidden="true" />{t.favorites}{hydrated && savedCount > 0 && <span className="market-count">{savedCount}</span>}</button>
+        </nav>
       </header>
 
-      <section className="store-hero" aria-labelledby="store-hero-title">
-        <div className="store-hero-copy">
-          <p className="store-eyebrow"><Sparkles aria-hidden="true" />{t.eyebrow}</p><h1 id="store-hero-title">{t.title}</h1><p>{t.body}</p>
-          <div className="store-hero-actions"><Button onClick={scrollToProducts} className="store-primary-cta">{t.primaryCta}<ArrowRight aria-hidden="true" /></Button><a href="#products">{t.secondaryCta}</a></div>
-          <div className="store-offer"><strong>{t.secureCheckout}</strong></div>
+      <div className="market-content">
+        <section className="market-intro"><div><h1>{t.title}</h1><p>{t.body}</p></div><a href="#shopping-help" onClick={openShoppingHelp}><MapPin aria-hidden="true" />{destinations[destination][locale]}<span>{t.shoppingHelp}</span><ChevronDown aria-hidden="true" /></a></section>
+        <div className="market-departments" aria-label={t.categories}>{categoryOrder.slice(1).map((value, index) => {
+          const Icon = categoryIcons[index];
+          const sample = products.find((product) => product.category === value);
+          return <button key={value} className="market-department" onClick={() => chooseCategory(value)} aria-pressed={category === value}><Icon aria-hidden="true" /><span><strong>{t.categoryNav[index + 1]}</strong><small>{catalogLoading || catalogError ? t.categoryBody[index] : t.productCount(categoryCounts[index + 1])}</small></span>{sample && <Image src={sample.image} alt="" width={80} height={80} />}<ArrowRight aria-hidden="true" /></button>;
+        })}</div>
+
+        <div className="market-catalog-layout">
+          <aside className="market-sidebar" aria-label={t.filters}>
+            <button className="market-filter-toggle" onClick={() => setFiltersOpen(!filtersOpen)} aria-expanded={filtersOpen} aria-controls="catalog-filters"><SlidersHorizontal aria-hidden="true" />{t.filters}{filterCount > 0 && <span className="market-count">{filterCount}</span>}<ChevronDown aria-hidden="true" /></button>
+            <div className="market-filter-body" id="catalog-filters" data-open={filtersOpen}>
+              <fieldset className="market-filter-group"><legend>{t.categories}</legend>{categoryOrder.map((value, index) => <button className="market-category-filter" key={value} aria-pressed={category === value} onClick={() => setCategory(value)}><span>{t.categoryNav[index]}</span>{!catalogLoading && !catalogError && <span className="market-count">{categoryCounts[index]}</span>}</button>)}</fieldset>
+              <fieldset className="market-filter-group"><legend><label htmlFor="price-filter">{t.budget}</label></legend><select className="market-price-select" id="price-filter" value={priceBand} onChange={(event) => setPriceBand(event.target.value as PriceBand)}>{priceBands.map((value, index) => <option key={value} value={value}>{t.priceBands[index]}</option>)}</select></fieldset>
+              <label className="market-stock-toggle"><input type="checkbox" checked={inStockOnly} onChange={(event) => setInStockOnly(event.target.checked)} />{t.inStock}</label>
+              <button className="market-filter-reset" onClick={resetFilters}>{t.reset}</button>
+            </div>
+          </aside>
+
+          <section className="store-products market-results" id="products" aria-labelledby="products-title">
+            <div className="market-results-heading"><h2 id="products-title">{search.trim() ? t.searchResults : collection !== "all" ? collectionLabels[collection] : t.categoryNav[categoryOrder.indexOf(category)]}</h2><p role="status" aria-live="polite">{catalogLoading ? t.catalogLoading : catalogError ? "" : t.results(matchingProducts.length)}</p></div>
+            <div className="market-toolbar"><div className="market-collections" aria-label={t.browse}>{collectionOrder.map((value) => <button key={value} onClick={() => setCollection(value)} aria-pressed={collection === value}>{collectionLabels[value]}</button>)}</div><label className="store-sort"><span>{t.sort}</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as ProductSort)}>{sortOrders.map((value, index) => <option value={value} key={value}>{t.sortOptions[index]}</option>)}</select></label></div>
+            {filterCount > 0 && <div className="market-active-filters">
+              {category !== "all" && <button onClick={() => setCategory("all")} aria-label={`${t.removeFilter}: ${t.categoryNav[categoryOrder.indexOf(category)]}`}>{t.categoryNav[categoryOrder.indexOf(category)]}<X aria-hidden="true" /></button>}
+              {search.trim() && <button onClick={() => setSearch("")} aria-label={t.clearSearch}>“{search.trim()}”<X aria-hidden="true" /></button>}
+              {priceBand !== "any" && <button onClick={() => setPriceBand("any")} aria-label={`${t.removeFilter}: ${t.priceBands[priceBands.indexOf(priceBand)]}`}>{t.priceBands[priceBands.indexOf(priceBand)]}<X aria-hidden="true" /></button>}
+              {inStockOnly && <button onClick={() => setInStockOnly(false)}>{t.inStock}<X aria-hidden="true" /></button>}
+            </div>}
+            {bagNotice && <p className="store-bag-notice" role="status">{t[bagNotice]}</p>}
+            <div className="store-product-grid" id="catalog-grid" aria-busy={catalogLoading}>
+              {!catalogLoading && !catalogError && visibleProducts.map((product) => {
+                const discount = productDiscountPercent(product);
+                return <article className="store-product-card" key={product.id}>
+                  <button className="store-wishlist" onClick={() => toggleFavorite(product.id)} aria-label={`${favorites[product.id] ? t.saved : t.save}: ${product.name}`} aria-pressed={Boolean(favorites[product.id])}><Heart aria-hidden="true" fill={favorites[product.id] ? "currentColor" : "none"} /></button>
+                  <button className={`store-product-media store-product-${product.color}`} onClick={() => setSelectedProductId(product.id)} aria-label={`${t.quickView}: ${product.name}`}>
+                    {discount !== null && <span className="store-product-badge market-discount">−{discount}%</span>}
+                    <Image src={product.image} alt={product.name} width={480} height={480} /><span className="store-quick-view">{t.quickView}</span>
+                  </button>
+                  <div className="store-product-copy"><a href={`/product/${encodeURIComponent(product.id)}`}><h3>{product.name}</h3><p>{product.description[locale]}</p></a><div><strong>{price(product)}</strong>{hasProductDiscount(product) && <del>{comparePrice(product)}</del>}<span className="market-price-currency">USD</span></div></div>
+                  {product.reviews > 0 && product.rating > 0 && <div className="store-product-rating" aria-label={`${product.rating} ${t.rating}`}><Star aria-hidden="true" fill="currentColor" /><span>{product.rating}</span><span>({product.reviews})</span></div>}
+                  <p className="market-product-stock" data-available={product.inventory > 0}>{product.inventory > 0 ? t.available : t.soldOut}</p>
+                  <Button className="store-add-button" disabled={(cart[product.id] ?? 0) >= productQuantityLimit(product)} onClick={() => addToBag(product.id)} aria-label={`${t.add}: ${product.name}`}><Plus aria-hidden="true" />{!product.inventory ? t.soldOut : (cart[product.id] ?? 0) >= productQuantityLimit(product) ? t.bagLimit : t.add}</Button>
+                </article>;
+              })}
+              {catalogLoading && <><span className="sr-only" role="status">{t.catalogLoading}</span>{Array.from({ length: 10 }, (_, index) => <div className="market-card-skeleton" key={index} aria-hidden="true"><div /><span /><span /><span /></div>)}</>}
+              {!catalogLoading && catalogError && <div className="store-empty" role="alert"><PackageCheck className="market-empty-icon" aria-hidden="true" /><h3>{t.catalogErrorTitle}</h3><p>{t.catalogError}</p><Button onClick={reloadCatalog}>{t.retry}</Button></div>}
+              {!catalogLoading && !catalogError && !products.length && <div className="store-empty"><ShoppingBag className="market-empty-icon" aria-hidden="true" /><h3>{t.catalogEmptyTitle}</h3><p>{t.catalogEmpty}</p><Button onClick={reloadCatalog}>{t.retry}</Button></div>}
+              {!catalogLoading && !catalogError && products.length > 0 && !visibleProducts.length && <div className="store-empty">{collection === "saved" && savedCount === 0 ? <Heart className="market-empty-icon" aria-hidden="true" /> : <Search className="market-empty-icon" aria-hidden="true" />}<h3>{collection === "saved" && savedCount === 0 ? t.savedEmptyTitle : t.noResultsTitle}</h3><p>{collection === "saved" && savedCount === 0 ? t.savedEmpty : t.noResults}</p><Button onClick={resetFilters}>{t.browse}</Button></div>}
+            </div>
+            {!catalogLoading && !catalogError && matchingProducts.length > 0 && <div className="store-catalog-pagination"><p role="status" aria-live="polite" aria-atomic="true">{t.showing(visibleProducts.length, matchingProducts.length)}</p>{matchingProducts.length > 24 && <Button className="store-show-more" aria-controls="catalog-grid" disabled={visibleProducts.length >= matchingProducts.length} onClick={() => setProductWindow((window) => expandCatalogWindow(window, productScope, matchingProducts.length))}>{visibleProducts.length < matchingProducts.length ? t.showMore : t.allShown}{visibleProducts.length < matchingProducts.length && <Plus aria-hidden="true" />}</Button>}</div>}
+          </section>
         </div>
-        <div className="store-hero-collage" aria-label="Featured products"><span className="collage-label">01 / NEW &amp; NOTEWORTHY</span>
-          {products.slice(0, 3).map((product, index) => <button className={`collage-product collage-product-${index + 1}`} key={product.id} onClick={() => setSelectedProduct(product)} aria-label={`${t.quickView}: ${product.name}`}><Image src={product.image} priority={index === 0} alt={product.name} width={680} height={680} /><span>{product.name}</span><strong>${product.price.toFixed(2)}</strong></button>)}
-          {!products.length && <p className="store-collage-status" role="status">{catalogLoading ? t.catalogLoading : catalogError ? t.catalogError : t.catalogEmpty}</p>}
-        </div>
-      </section>
 
-      <section className="store-trust-row" aria-label="Shopping benefits">{t.trust.map((item, index) => { const Icon = trustIcons[index]; return <div key={item}><Icon aria-hidden="true" /><span>{item}</span></div>; })}</section>
+        <p className="market-shopping-note"><ShieldCheck aria-hidden="true" /><span>{t.delivery}</span><a href="#shopping-help" onClick={openShoppingHelp}>{t.shoppingHelp}</a></p>
+        <details className="market-help" id="shopping-help"><summary><h2>{t.shippingTitle}</h2><ChevronDown aria-hidden="true" /></summary><div className="market-help-grid">{t.shippingSteps.map(([title, body]) => <article key={title}><h3>{title}</h3><p>{body}</p></article>)}</div></details>
+      </div>
 
-      <section className="store-categories" aria-labelledby="category-title">
-        <div className="store-section-heading"><h2 id="category-title">{t.shopBy}</h2><p>{t.shopByBody}</p></div>
-        <div className="store-category-grid">{t.categoryCards.map(([title, body], index) => (
-          <button className={`store-category-card category-card-${index + 1}`} key={title} onClick={() => chooseCategory(categoryValues[index])}><div><span>{String(index + 1).padStart(2, "0")}</span><h3>{title}</h3><p>{body}</p><small>{products.filter((product) => product.category === categoryValues[index]).length}<ArrowRight aria-hidden="true" /></small></div><Image src={products.find((product) => product.category === categoryValues[index])?.image ?? categoryImages[index]} alt="" width={700} height={700} /></button>
-        ))}</div>
-      </section>
+      <footer className="store-footer market-footer"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a><p>{t.footer}<small>{t.currency}</small></p><nav aria-label={t.shoppingHelp}><a href="#products" onClick={resetFilters}>{t.all}</a><a href="/track">{t.track}</a><a href="#shopping-help" onClick={openShoppingHelp}>{t.shoppingHelp}</a><a href="#top">{t.backTop}</a></nav></footer>
 
-      <section className="store-products" id="products" aria-labelledby="products-title">
-        <div className="store-products-heading"><div><p>{t.bestKicker}</p><h2 id="products-title">{t.bestTitle}</h2></div><p>{t.bestBody}</p><button onClick={() => { setCategory("all"); setSearch(""); }}>{t.viewAll}<ArrowRight aria-hidden="true" /></button></div>
-        <div className="store-product-filters" aria-label="Product filters">
-          <div>{categoryOrder.map((item, index) => <button key={item} onClick={() => setCategory(item)} aria-pressed={category === item}>{t.categoryNav[index]}</button>)}</div>
-          {search && <span>“{search}”</span>}
-          <label className="store-sort"><span>{t.sort}</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>{(["featured", "price-low", "price-high"] as SortOrder[]).map((value, index) => <option value={value} key={value}>{t.sortOptions[index]}</option>)}</select></label>
-        </div>
-        {bagNotice && <p className="store-bag-notice" role="status">{t[bagNotice]}</p>}
-        <div className="store-product-grid" id="catalog-grid" aria-busy={catalogLoading}>
-          {visibleProducts.map((product) => (
-            <article className="store-product-card" key={product.id}>
-              <button className="store-wishlist" onClick={() => toggleFavorite(product.id)} aria-label={favorites[product.id] ? `${t.saved}: ${product.name}` : `${t.save}: ${product.name}`} aria-pressed={Boolean(favorites[product.id])}><Heart aria-hidden="true" fill={favorites[product.id] ? "currentColor" : "none"} /></button>
-              <button className={`store-product-media store-product-${product.color}`} onClick={() => setSelectedProduct(product)} aria-label={`${t.quickView}: ${product.name}`}><span className="store-product-badge">{product.badge[locale]}</span><Image src={product.image} alt={product.name} width={900} height={900} /><span className="store-quick-view">{t.quickView}</span></button>
-              {product.reviews > 0 && <div className="store-product-rating" aria-label={`${product.rating} ${t.rating}`}><Star aria-hidden="true" fill="currentColor" /><span>{product.rating}</span><span>({product.reviews})</span></div>}
-              <div className="store-product-copy"><a href={`/product/${encodeURIComponent(product.id)}`}><h3>{product.name}</h3><p>{product.description[locale]}</p></a><div><strong>${product.price.toFixed(2)}</strong>{product.compareAt && <del>${product.compareAt.toFixed(2)}</del>}</div></div>
-              <Button className="store-add-button" disabled={catalogLoading || catalogError || (cart[product.id] ?? 0) >= productQuantityLimit(product)} onClick={() => addToBag(product.id)}><Plus aria-hidden="true" />{product.inventory ? t.add : t.soldOut}</Button>
-            </article>
-          ))}
-          {catalogLoading && <div className="store-empty" role="status"><p>{t.catalogLoading}</p></div>}
-          {!catalogLoading && catalogError && <div className="store-empty" role="alert"><p>{t.catalogError}</p><Button onClick={reloadCatalog}>{t.retry}</Button></div>}
-          {!catalogLoading && !catalogError && !products.length && <div className="store-empty"><p>{t.catalogEmpty}</p></div>}
-          {!catalogLoading && !catalogError && products.length > 0 && !visibleProducts.length && <div className="store-empty"><Search aria-hidden="true" /><p>{t.noResults}</p><Button onClick={() => { setSearch(""); setCategory("all"); }}>{t.clearSearch}</Button></div>}
-        </div>
-        {!catalogLoading && !catalogError && matchingProducts.length > 0 && (
-          <div className="store-catalog-pagination">
-            <p role="status" aria-live="polite" aria-atomic="true">{t.showing(visibleProducts.length, matchingProducts.length)}</p>
-            {matchingProducts.length > 24 && <Button className="store-show-more" aria-controls="catalog-grid" disabled={visibleProducts.length >= matchingProducts.length} onClick={() => setProductWindow((window) => expandCatalogWindow(window, productScope, matchingProducts.length))}>{visibleProducts.length < matchingProducts.length ? t.showMore : t.allShown}{visibleProducts.length < matchingProducts.length && <Plus aria-hidden="true" />}</Button>}
-          </div>
-        )}
-      </section>
-
-      <section className="store-edit" aria-labelledby="edit-title"><div className="store-edit-visual"><Image src="/products/loop.webp" alt="Loop Mini Crossbody featured in the MIOVA edit" width={1000} height={1000} /><span>MIOVA / EDIT 09</span></div><div className="store-edit-copy"><p>{t.promoKicker}</p><h2 id="edit-title">{t.promoTitle}</h2><p>{t.promoBody}</p><a href="#products">{t.promoCta}<ArrowRight aria-hidden="true" /></a></div></section>
-
-      <section className="store-shipping" id="shipping" aria-labelledby="shipping-title">
-        <div className="store-shipping-heading"><h2 id="shipping-title">{t.shippingTitle}</h2><p>{t.shippingBody}</p></div>
-        <div className="store-shipping-grid">{t.shippingSteps.map(([title, body], index) => { const Icon = shippingIcons[index]; return <article key={title}><span>{String(index + 1).padStart(2, "0")}</span><Icon aria-hidden="true" /><h3>{title}</h3><p>{body}</p></article>; })}</div>
-      </section>
-
-      <section className="service-strip" aria-label="Service commitments">{t.services.map((service, index) => { const Icon = serviceIcons[index]; return <div key={service}><Icon aria-hidden="true" /><span>{service}</span></div>; })}</section>
-      <footer className="store-footer"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a><p>{t.footer}</p><div><a href="#products">Shop</a><a href="#shipping">Shipping</a><a href="/ops">{t.merchant}</a></div></footer>
-
-      <Sheet open={Boolean(selectedProduct)} onOpenChange={(open) => !open && setSelectedProduct(null)}>
-        <SheetContent className="store-detail-sheet">{selectedProduct && <><div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={900} height={900} /></div><SheetHeader className="store-detail-header"><SheetDescription>{selectedProduct.badge[locale]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader><div className="store-detail-body"><div className="store-detail-price"><strong>${selectedProduct.price.toFixed(2)}</strong>{selectedProduct.compareAt && <del>${selectedProduct.compareAt.toFixed(2)}</del>}</div>{selectedProduct.reviews > 0 && <div className="store-product-rating"><Star aria-hidden="true" fill="currentColor" /><span>{selectedProduct.rating}</span><span>({selectedProduct.reviews})</span></div>}<p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote} · {selectedProduct.inventory}</span></div><SheetFooter className="store-detail-footer"><Button disabled={catalogLoading || catalogError || (cart[selectedProduct.id] ?? 0) >= productQuantityLimit(selectedProduct)} onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{selectedProduct.inventory ? t.add : t.soldOut} · ${selectedProduct.price.toFixed(2)}</Button><Button variant="outline" onClick={() => toggleFavorite(selectedProduct.id)}><Heart aria-hidden="true" fill={favorites[selectedProduct.id] ? "currentColor" : "none"} />{favorites[selectedProduct.id] ? t.saved : t.save}</Button></SheetFooter></>}</SheetContent>
+      <Sheet open={Boolean(selectedProduct)} onOpenChange={(open) => !open && setSelectedProductId(null)}>
+        <SheetContent className="store-detail-sheet market-sheet" closeLabel={t.close}>{selectedProduct && <>
+          <div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={640} height={640} /></div>
+          <SheetHeader className="store-detail-header"><SheetDescription>{t.categoryNav[categoryOrder.indexOf(selectedProduct.category)]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader>
+          <div className="store-detail-body"><div className="store-detail-price"><strong>{price(selectedProduct)}</strong>{hasProductDiscount(selectedProduct) && <del>{comparePrice(selectedProduct)}</del>}<small>USD</small></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote}: {selectedProduct.inventory}</span><a className="market-detail-link" href={`/product/${encodeURIComponent(selectedProduct.id)}`}>{t.productPage}<ArrowRight aria-hidden="true" /></a></div>
+          <SheetFooter className="store-detail-footer"><Button disabled={catalogLoading || catalogError || (cart[selectedProduct.id] ?? 0) >= productQuantityLimit(selectedProduct)} onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{selectedProduct.inventory ? t.add : t.soldOut}</Button><Button variant="outline" onClick={() => toggleFavorite(selectedProduct.id)}><Heart aria-hidden="true" fill={favorites[selectedProduct.id] ? "currentColor" : "none"} />{favorites[selectedProduct.id] ? t.saved : t.save}</Button></SheetFooter>
+        </>}</SheetContent>
       </Sheet>
     </main>
   );

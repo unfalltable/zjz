@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./storefront.css";
 
 export const metadata: Metadata = {
-  title: "MIOVA 妙物 — Good finds, fewer borders",
-  description: "A multilingual cross-border store for useful, unusual and well-made products from Asia.",
+  title: "MIOVA 妙物 — Shop home, electronics & everyday essentials",
+  description: "Browse home essentials, electronics, bags and accessories at MIOVA. Search products, compare USD prices and save your shopping bag.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 
