@@ -20,6 +20,7 @@ export const checkoutSchema = z.object({
   phone: z.string().trim().min(7).max(30),
   destination: z.enum(destinationCodes),
   deliveryMethod: z.enum(deliveryMethods),
+  shippingRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   marketingOptIn: z.boolean(),
   website: z.string().max(0),
   items: z.array(z.object({ id: z.string().trim().min(1).max(64), quantity: z.number().int().min(1).max(10) }))
@@ -35,6 +36,7 @@ export function canonicalCheckoutRequest(input: CheckoutInput): string {
     address: input.address, apartment: input.apartment, city: input.city, region: input.region,
     postal: input.postal, phone: input.phone, destination: input.destination,
     deliveryMethod: input.deliveryMethod, marketingOptIn: input.marketingOptIn,
+    ...(input.shippingRevision ? { shippingRevision: input.shippingRevision } : {}),
     items: [...input.items].map(({ id, quantity }) => ({ id, quantity })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   });
 }

@@ -4,6 +4,7 @@ import { env } from "cloudflare:workers";
 import { z } from "zod";
 
 import { trackStorefrontOrder } from "@backend/db/storefront";
+import { getPublicFulfillment } from "@backend/db/public-fulfillment";
 import type { TrackActionState } from "./action-state";
 export type { TrackActionState } from "./action-state";
 
@@ -57,6 +58,7 @@ export async function lookupOrderAction(
       progress: order.progress,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      ...await getPublicFulfillment(ownerId, order.orderNumber),
     } };
   } catch (error) {
     console.error("Order tracking failed", error);

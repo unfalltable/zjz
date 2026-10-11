@@ -1,57 +1,22 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
 import {
-  ArrowUpRight,
   Boxes,
-  Cable,
-  Check,
-  CircleAlert,
-  CircleDot,
-  Clock3,
-  Globe2,
-  House,
-  Headphones,
-  LayoutDashboard,
-  LogIn,
-  LogOut,
-  PackageCheck,
   PackagePlus,
-  PanelsTopLeft,
-  Plane,
-  Plus,
   RotateCw,
   Route,
-  ShoppingBag,
   Store,
-  Truck,
   Warehouse,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { legalNextStatuses } from "@backend/domain/commerce";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { Progress } from "@/components/ui/progress";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
 import {
   Table,
   TableBody,
@@ -60,23 +25,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Toaster } from "@/components/ui/sonner";
 import type {
   FulfillmentMode,
-  OpsOrder,
   OpsProduct,
   OpsSnapshot,
-  OrderStatus,
 } from "@shared/ops-types";
 
 import {
   addStockAction,
   importProductsAction,
   saveProductAction,
-  updateOrderStatusAction,
 } from "./actions";
 import { initialOpsActionState } from "./action-state";
+import { CommercialConsole } from "./commercial-console";
 
 type Locale = "en" | "zh";
 let fallbackOpsLocale: Locale = "en";
@@ -236,24 +197,6 @@ const copy = {
   },
 } as const;
 
-const statusLabels: Record<Locale, Record<OrderStatus, string>> = {
-  en: {
-    payment_pending: "Payment pending",
-    purchase: "Purchase task",
-    packing: "Packing",
-    handoff: "Forwarder handoff",
-    transit: "International transit",
-    delivered: "Delivered",
-  },
-  zh: {
-    payment_pending: "待支付",
-    purchase: "采购任务",
-    packing: "打包中",
-    handoff: "货代交接",
-    transit: "国际运输",
-    delivered: "已送达",
-  },
-};
 
 const laneMeta = {
   marketplace: { icon: Store, className: "marketplace" },
@@ -261,362 +204,16 @@ const laneMeta = {
   supplier: { icon: Boxes, className: "supplier" },
 } as const;
 
-const navItems = [
-  { id: "route-board", label: "overview", icon: LayoutDashboard },
-  { id: "manifest", label: "orders", icon: ShoppingBag },
-  { id: "manifest", label: "inventory", icon: PackageCheck },
-  { id: "route-board", label: "fulfillment", icon: Route },
-  { id: "integrations", label: "integrations", icon: Cable },
-] as const;
 
-const integrations = [
-  { name: "PDD", group: "Sourcing", icon: Store, connected: false },
-  { name: "Shopify", group: "Commerce", icon: ShoppingBag, connected: false },
-  { name: "Stripe", group: "Verification pending", icon: CircleDot, connected: false },
-  { name: "4PX", group: "Logistics", icon: Plane, connected: false },
-  { name: "ShipStation", group: "Shipping", icon: Truck, connected: false },
-  { name: "Gorgias", group: "Support", icon: Headphones, connected: false },
-] as const;
-
-export function OpsDashboard({
-  snapshot,
-  databaseAvailable,
-  user,
-  signInPath,
-  storefrontUrl,
-  selfhostAuth = false,
-}: OpsDashboardProps) {
+export function OpsDashboard(props: OpsDashboardProps) {
   const locale = useSyncExternalStore(subscribeOpsLocale, readOpsLocale, () => "en" as Locale);
-  const [tab, setTab] = useState("orders");
-  const [activeNav, setActiveNav] = useState<string>("overview");
+  const editable = Boolean(props.user && props.databaseAvailable);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  useEffect(() => { document.documentElement.lang = locale === "zh" ? "zh-CN" : "en"; }, [locale]);
-  useEffect(() => {
-    const restore = () => {
-      const view = new URL(window.location.href).searchParams.get("view");
-      if (view === "orders" || view === "inventory" || view === "audit") {
-        setTab(view);
-        setActiveNav(view);
-      }
-    };
-    restore();
-    window.addEventListener("popstate", restore);
-    return () => window.removeEventListener("popstate", restore);
-  }, []);
-  const selectTab = (value: string) => {
-    setTab(value);
-    setActiveNav(value);
-    const url = new URL(window.location.href);
-    url.searchParams.set("view", value);
-    url.hash = "manifest";
-    window.history.replaceState(null, "", url);
-  };
-  const t = copy[locale];
-  const needle = query.trim().toLowerCase();
-  const filteredOrders = snapshot.orders.filter((order) =>
-    (statusFilter === "all" || order.status === statusFilter) &&
-    `${order.orderNumber} ${order.customerName} ${order.productName} ${order.destination}`.toLowerCase().includes(needle)
-  );
-  const filteredProducts = snapshot.products.filter((product) =>
-    `${product.sku} ${product.name}`.toLowerCase().includes(needle)
-  );
-
-  const metrics = useMemo(() => {
-    const open = snapshot.orders.filter((order) => order.status !== "delivered");
-    const value = open.filter((order) => order.paymentStatus === "paid").reduce((sum, order) => sum + order.amountCents, 0);
-    const stock = snapshot.products.reduce(
-      (sum, product) => sum + Math.max(0, product.stock - product.reserved),
-      0
-    );
-    return { open, value, stock };
-  }, [snapshot]);
-
-  const laneCounts = useMemo(
-    () =>
-      metrics.open.filter((order) => order.paymentStatus === "paid").reduce<Record<FulfillmentMode, number>>(
-        (counts, order) => {
-          order.routeModes.forEach((mode) => {
-            counts[mode] += 1;
-          });
-          return counts;
-        },
-        { marketplace: 0, self: 0, supplier: 0 }
-      ),
-    [metrics.open]
-  );
-
-  const editable = Boolean(user && databaseAvailable);
-
-  return (
-    <SidebarProvider className="ops-shell">
-      <a className="skip-link" href="#ops-main">Skip to operations</a>
-      <Toaster position="bottom-center" />
-      <Sidebar collapsible="offcanvas" className="ops-sidebar">
-        <SidebarHeader className="ops-sidebar-header">
-          <a href={storefrontUrl ?? "#ops-main"} className="brand ops-brand" aria-label="MIOVA 妙物">
-            <span className="brand-mark" aria-hidden="true"><Plane /></span>
-            <span>MIOVA 妙物</span>
-          </a>
-          <span className="ops-console-tag">{t.system}</span>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel className="ops-nav-label">Control room</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {navItems.map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton asChild isActive={activeNav === item.label} className="ops-nav-item">
-                      <a href={`#${item.id}`} onClick={() => {
-                        setActiveNav(item.label);
-                        if (item.label === "orders" || item.label === "inventory") selectTab(item.label);
-                      }}>
-                        <item.icon aria-hidden="true" />
-                        <span>{t[item.label]}</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild className="ops-nav-item">
-                    <a href={storefrontUrl ?? "#ops-main"} aria-disabled={!storefrontUrl}>
-                      <House aria-hidden="true" />
-                      <span>{t.storefront}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter className="ops-sidebar-footer">
-          {user ? (
-            <>
-              <div className="ops-user">
-                <span>{t.signedInAs}</span>
-                <strong>{user.displayName}</strong>
-                <small>{user.email}</small>
-              </div>
-              {selfhostAuth ? (
-                <div className="ops-user"><small>{t.selfhostSignOutHelp}</small></div>
-              ) : (
-                <a className="ops-auth-link" href={user.signOutPath} target="_top">
-                  <LogOut aria-hidden="true" /> {t.signOut}
-                </a>
-              )}
-            </>
-          ) : selfhostAuth ? (
-            <div className="ops-user">
-              <strong>{t.selfhostLocked}</strong><small>{t.selfhostLoginHelp}</small>
-            </div>
-          ) : (
-            <a className="ops-auth-link ops-auth-primary" href={signInPath} target="_top">
-              <LogIn aria-hidden="true" /> {t.signIn}
-            </a>
-          )}
-        </SidebarFooter>
-      </Sidebar>
-
-      <SidebarInset className="ops-main" id="ops-main">
-        <header className="ops-topbar">
-          <div>
-            <SidebarTrigger className="ops-sidebar-trigger" aria-label="Open navigation" />
-            <div className="ops-breadcrumb"><span>MIOVA 妙物</span><strong>{activeNav === "audit" ? (locale === "zh" ? "变更记录" : "Audit log") : t[activeNav as (typeof navItems)[number]["label"]] ?? t.overview}</strong></div>
-          </div>
-          <div className="ops-top-actions">
-            <label className="ops-language">
-              <Globe2 aria-hidden="true" />
-              <span className="sr-only">Language</span>
-              <select value={locale} onChange={(event) => {
-                const value = event.target.value as Locale;
-                changeOpsLocale(value);
-              }}>
-                <option value="en">EN</option>
-                <option value="zh">简中</option>
-              </select>
-            </label>
-            <span className={`ops-mode ${editable ? "is-live" : ""}`}>
-              {editable ? t.live : t.demo}
-            </span>
-          </div>
-        </header>
-
-        <div className="ops-canvas">
-          {!databaseAvailable && (
-            <div className="ops-alert" role="status">
-              <CircleAlert aria-hidden="true" /> {t.unavailable}
-            </div>
-          )}
-          {!user && (
-            <div className="ops-demo-banner">
-              <div><PanelsTopLeft aria-hidden="true" /><span>{selfhostAuth ? t.selfhostLoginHelp : t.demoBody}</span></div>
-              {!selfhostAuth && <a href={signInPath} target="_top">{t.signIn}<ArrowUpRight aria-hidden="true" /></a>}
-            </div>
-          )}
-
-          <section className="ops-board" id="route-board" aria-labelledby="route-board-title">
-            <div className="ops-board-heading">
-              <div>
-                <p className="ops-section-code">HW / OPS / 24</p>
-                <h1 id="route-board-title">{t.routeBoard}</h1>
-                <p>{t.routeBoardBody}</p>
-              </div>
-              <a className="ops-store-link" href={storefrontUrl ?? "#ops-main"} aria-disabled={!storefrontUrl}>
-                {t.viewStore}<ArrowUpRight aria-hidden="true" />
-              </a>
-            </div>
-
-            <div className="ops-metrics" aria-label="Operations summary">
-              <Metric label={t.revenue} value={formatMoney(metrics.value, "USD", locale)} />
-              <Metric label={t.openOrders} value={String(metrics.open.length).padStart(2, "0")} />
-              <Metric label={t.available} value={String(metrics.stock)} />
-              <Metric label={t.onTime} value={String(snapshot.orders.filter((order) => order.paymentStatus === "pending").length)} />
-            </div>
-            <p className="ops-window-note">{locale === "zh" ? "当前列表：最近 200 笔订单、最多 1000 个商品。汇总基于当前窗口，并非全店历史报表。" : "Current window: latest 200 orders and up to 1,000 products. These totals are not lifetime store reports."}</p>
-
-            <div className="ops-lane-intro">
-              <div><Route aria-hidden="true" /><h2>{t.lane}</h2></div>
-              <p>{t.laneBody}</p>
-            </div>
-            <div className="ops-lanes">
-              {(["marketplace", "self", "supplier"] as FulfillmentMode[]).map((mode) => {
-                const lane = laneMeta[mode];
-                const Icon = lane.icon;
-                return (
-                  <article className={`ops-lane ${lane.className}`} key={mode}>
-                    <div className="ops-lane-marker"><Icon aria-hidden="true" /></div>
-                    <div>
-                      <h3>{t[mode]}</h3>
-                      <p>{t[`${mode}Note` as "marketplaceNote" | "selfNote" | "supplierNote"]}</p>
-                    </div>
-                    <strong>{laneCounts[mode]}</strong>
-                    <span>{t.active}</span>
-                    <Truck className="ops-lane-truck" aria-hidden="true" />
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="ops-manifest" id="manifest" aria-labelledby="manifest-title">
-            <div className="ops-manifest-heading">
-              <div>
-                <p className="ops-section-code">MANIFEST / LIVE</p>
-                <h2 id="manifest-title">{t.operations}</h2>
-              </div>
-              <p>{t.operationsBody}</p>
-            </div>
-
-            <div className="ops-safety-note" role="note">{locale === "zh" ? "支付尚未开通：待付款订单仅为草稿，不锁库存，不可启动发货。三种路线为人工管理，尚无自动采购或物流调用。" : "Payments are disabled. Pending orders are drafts, do not reserve stock, and cannot ship. Fulfillment lanes are manually managed; external dispatch is not connected."}</div>
-            <div className="ops-filters">
-              <label>{locale === "zh" ? "搜索订单或商品" : "Search orders or products"}<Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === "zh" ? "订单号、SKU、名称" : "Order, SKU, name"} /></label>
-              {tab === "orders" && <label>{t.status}<NativeSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <NativeSelectOption value="all">{locale === "zh" ? "全部状态" : "All statuses"}</NativeSelectOption>
-                {(Object.keys(statusLabels[locale]) as OrderStatus[]).map((status) => <NativeSelectOption key={status} value={status}>{statusLabels[locale][status]}</NativeSelectOption>)}
-              </NativeSelect></label>}
-              <span role="status">{locale === "zh" ? "当前显示" : "Showing"} {tab === "inventory" ? filteredProducts.length : tab === "audit" ? (snapshot.auditEvents?.length ?? 0) : filteredOrders.length}</span>
-            </div>
-            <Tabs value={tab} onValueChange={selectTab} className="ops-tabs">
-              <TabsList variant="line" className="ops-tab-list">
-                <TabsTrigger value="orders">{t.allOrders} <span>{snapshot.orders.length}</span></TabsTrigger>
-                <TabsTrigger value="inventory">{t.stock} <span>{snapshot.products.length}</span></TabsTrigger>
-                <TabsTrigger value="audit">{locale === "zh" ? "变更记录" : "Audit log"}</TabsTrigger>
-              </TabsList>
-              <TabsContent value="orders">
-                <OrdersTable orders={filteredOrders} editable={editable} locale={locale} />
-              </TabsContent>
-              <TabsContent value="inventory">
-                <CatalogTools editable={editable} locale={locale} />
-                <InventoryTable snapshot={{ ...snapshot, products: filteredProducts }} editable={editable} locale={locale} />
-              </TabsContent>
-              <TabsContent value="audit"><AuditLog snapshot={snapshot} locale={locale} /></TabsContent>
-            </Tabs>
-          </section>
-
-          <section className="ops-integrations" id="integrations" aria-labelledby="integrations-title">
-            <div className="ops-integrations-heading">
-              <div>
-                <p className="ops-section-code">SYSTEM / CONNECTIONS</p>
-                <h2 id="integrations-title">{t.integrationsTitle}</h2>
-              </div>
-              <p>{t.integrationsBody}</p>
-            </div>
-            <div className="ops-integration-grid">
-              {integrations.map((integration) => {
-                const Icon = integration.icon;
-                return (
-                  <article key={integration.name}>
-                    <div className="ops-integration-icon"><Icon aria-hidden="true" /></div>
-                    <div><strong>{integration.name}</strong><span>{integration.group}</span></div>
-                    <span className={integration.connected ? "is-connected" : ""}>
-                      {integration.connected ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
-                      {integration.connected ? t.connected : t.ready}
-                    </span>
-                  </article>
-                );
-              })}
-            </div>
-            <div className="ops-api-row"><Cable aria-hidden="true" /><strong>{t.openApi}</strong><ArrowUpRight aria-hidden="true" /></div>
-          </section>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
+  const filtered = props.snapshot.products.filter((product) => `${product.sku} ${product.name}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const stockView = <><div className="admin-search-row"><label>{locale === "zh" ? "搜索商品 / SKU" : "Search products / SKU"}<Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>{filtered.length} {locale === "zh" ? "个商品" : "products"}</span></div><InventoryTable snapshot={{ ...props.snapshot, products: filtered }} editable={editable} locale={locale} /></>;
+  return <CommercialConsole locale={locale} onLocaleChange={changeOpsLocale} editable={editable} databaseAvailable={props.databaseAvailable} user={props.user} signInPath={props.signInPath} selfhostAuth={props.selfhostAuth ?? false} storefrontUrl={props.storefrontUrl} products={<><CatalogTools editable={editable} locale={locale} />{stockView}</>} inventory={stockView} audit={<AuditLog snapshot={props.snapshot} locale={locale} />} />;
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="ops-metric"><span>{label}</span><strong>{value}</strong></div>;
-}
-
-function OrdersTable({
-  orders,
-  editable,
-  locale,
-}: {
-  orders: OpsOrder[];
-  editable: boolean;
-  locale: Locale;
-}) {
-  const t = copy[locale];
-  return (
-    <div className="ops-table-wrap">
-      <Table className="ops-table">
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t.order}</TableHead>
-            <TableHead>{t.customer}</TableHead>
-            <TableHead>{t.product}</TableHead>
-            <TableHead>{t.route}</TableHead>
-            <TableHead>{t.status}</TableHead>
-            <TableHead>{t.value}</TableHead>
-            <TableHead>{t.nextStep}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {!orders.length && <TableRow><TableCell colSpan={7} className="ops-empty">{locale === "zh" ? "没有符合条件的订单。真实订单保存后会显示在这里。" : "No matching orders. Saved orders will appear here."}</TableCell></TableRow>}
-          {orders.map((order) => (
-            <TableRow key={order.orderNumber}>
-              <TableCell className="ops-order-id">
-                <strong>{order.orderNumber}</strong>
-                <span>{formatDate(order.createdAt, locale)}</span>
-              </TableCell>
-              <TableCell><strong>{order.customerName}</strong><span className="ops-cell-meta">{order.destination}</span></TableCell>
-              <TableCell>{order.productName}</TableCell>
-              <TableCell><LaneBadge mode={order.fulfillmentMode} modes={order.routeModes} locale={locale} /></TableCell>
-              <TableCell className="ops-status-cell">
-                <span className={`ops-status-dot status-${order.status}`} aria-hidden="true" />
-                <div><strong>{statusLabels[locale][order.status]}</strong><Progress value={order.progress} /></div>
-              </TableCell>
-              <TableCell><strong>{formatMoney(order.amountCents, order.currency, locale)}</strong></TableCell>
-              <TableCell><StatusEditor order={order} editable={editable} locale={locale} /></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
 
 function InventoryTable({
   snapshot,
@@ -665,45 +262,6 @@ function InventoryTable({
   );
 }
 
-function StatusEditor({
-  order,
-  editable,
-  locale,
-}: {
-  order: OpsOrder;
-  editable: boolean;
-  locale: Locale;
-}) {
-  const [state, formAction, pending] = useActionState(
-    updateOrderStatusAction,
-    initialOpsActionState
-  );
-  const t = copy[locale];
-  useActionToast(state);
-
-  if (order.paymentStatus !== "paid") {
-    return <span className="ops-payment-lock"><Clock3 aria-hidden="true" />{locale === "zh" ? "等待付款" : "Awaiting payment"}</span>;
-  }
-  const next = legalNextStatuses(order.status, order.paymentStatus) as OrderStatus[];
-  if (!next.length) return <span>{locale === "zh" ? "已完成" : "Complete"}</span>;
-
-  return (
-    <form action={formAction} className="ops-inline-form">
-      <input type="hidden" name="orderNumber" value={order.orderNumber} />
-      {order.version !== undefined && <input type="hidden" name="expectedVersion" value={order.version} />}
-      <NativeSelect name="status" key={`${order.status}-${order.version}`} defaultValue={next[0]} disabled={!editable || pending} aria-label={`${t.status} ${order.orderNumber}`}>
-        {next.map((status) => (
-          <NativeSelectOption key={status} value={status}>{statusLabels[locale][status]}</NativeSelectOption>
-        ))}
-      </NativeSelect>
-      <Button type="submit" size="sm" disabled={!editable || pending}>
-        {pending ? <RotateCw className="ops-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
-        {pending ? t.saving : t.save}
-      </Button>
-      <span className="sr-only" role="status" aria-atomic="true">{state.message}</span>
-    </form>
-  );
-}
 
 function StockEditor({ sku, editable, locale }: { sku: string; editable: boolean; locale: Locale }) {
   const [state, formAction, pending] = useActionState(addStockAction, initialOpsActionState);
@@ -767,6 +325,7 @@ function ProductForm({ product, editable, locale }: { product?: OpsProduct; edit
       <label>{zh ? "划线价（可选，需大于售价）" : "Compare-at (optional, above price)"}<Input name="compareAt" inputMode="decimal" defaultValue={product?.compareAtCents ? (product.compareAtCents / 100).toFixed(2) : ""} pattern="[0-9]{1,6}(\.[0-9]{1,2})?" /></label>
       <label>{zh ? "分类" : "Category"}<NativeSelect name="category" defaultValue={product?.category ?? "home"}><NativeSelectOption value="home">{zh ? "生活家居" : "Home & living"}</NativeSelectOption><NativeSelectOption value="tech">{zh ? "数码" : "Tech"}</NativeSelectOption><NativeSelectOption value="wear">{zh ? "服饰配件" : "Style & accessories"}</NativeSelectOption></NativeSelect></label>
       <label>{zh ? "图片地址（HTTPS 或 /products/）" : "Image URL (HTTPS or /products/)"}<Input name="image" defaultValue={product?.image ?? ""} required maxLength={2048} placeholder="https://…/product.webp" /></label>
+      <label>{zh ? "单件物流重量（克，含包装）" : "Shipping weight per unit (grams, packed)"}<Input name="shippingWeightGrams" type="number" min={1} max={1000000} step={1} required defaultValue={(product as OpsProduct & { shippingWeightGrams?: number } | undefined)?.shippingWeightGrams ?? 500} /></label>
       <input type="hidden" name="color" value={product?.metadata?.color ?? "blue"} />
       {(["en", "zh", "es"] as const).map((language) => <div className="ops-product-copy" key={language}>
         <input type="hidden" name={`badge_${language}`} value={product?.metadata?.badge[language] ?? ""} />

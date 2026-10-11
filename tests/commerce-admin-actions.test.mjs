@@ -204,14 +204,14 @@ test("admin order action blocks fulfillment for unpaid drafts with no status or 
   assert.equal(database.prepare("SELECT count(*) AS count FROM order_events").get().count, 0);
 }));
 
-test("admin paid status action rejects skipping and stale revisions and audits one forward step", async () => isolated(async (database) => {
+test("legacy status-only admin action cannot bypass real confirmation or shipment records", async () => isolated(async (database) => {
   insertOrder(database, { owner_id: owner, order_number: "MW-12345678" });
   assert.equal((await updateOrderStatusAction(initialOpsActionState, form({ orderNumber: "MW-12345678", status: "delivered", expectedVersion: "0" }))).kind, "error");
   const advanced = await updateOrderStatusAction(initialOpsActionState, form({ orderNumber: "MW-12345678", status: "packing", expectedVersion: "0" }));
-  assert.equal(advanced.kind, "success", advanced.message);
+  assert.equal(advanced.kind, "error", advanced.message);
   assert.equal((await updateOrderStatusAction(initialOpsActionState, form({ orderNumber: "MW-12345678", status: "handoff", expectedVersion: "0" }))).kind, "error");
-  assert.deepEqual({ ...database.prepare("SELECT status, version FROM orders").get() }, { status: "packing", version: 1 });
-  assert.equal(database.prepare("SELECT count(*) AS count FROM order_events").get().count, 1);
+  assert.deepEqual({ ...database.prepare("SELECT status, version FROM orders").get() }, { status: "purchase", version: 0 });
+  assert.equal(database.prepare("SELECT count(*) AS count FROM order_events").get().count, 0);
 }));
 
 test("admin explicit import is idempotent and never invents paid orders", async () => isolated(async (database) => {

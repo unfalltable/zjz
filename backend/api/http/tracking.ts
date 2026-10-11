@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { trackStorefrontOrder } from "@backend/db/storefront";
+import { getPublicFulfillment } from "@backend/db/public-fulfillment";
 import { errorResponse, HttpError, json, readJson } from "./json";
 const lookup = z.object({
   orderNumber: z.string().trim().toUpperCase().regex(/^MW-\d{5,8}$/),
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
       deliveryMethod: order.deliveryMethod, paymentStatus: order.paymentStatus,
       status: order.status, progress: order.progress, routeModes: order.routeModes,
       createdAt: order.createdAt, updatedAt: order.updatedAt,
+      ...await getPublicFulfillment(ownerId, order.orderNumber),
     } });
   } catch (error) { return errorResponse(error); }
 }

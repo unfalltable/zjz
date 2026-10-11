@@ -1,0 +1,7 @@
+.tracking-packages { margin-top: 24px; border-top: 1px solid var(--store-ink, #10143a); padding-top: 20px; }
+.tracking-packages h3 { font-size: 20px; margin-bottom: 10px; }
+.tracking-packages > p { line-height: 1.6; margin-bottom: 16px; }
+.tracking-packages article { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid #d2d5df; padding: 16px 0; overflow-wrap: anywhere; }
+.tracking-packages article small { width: 100%; }
+.tracking-packages a { text-decoration: underline; min-height: 44px; display: inline-flex; align-items: center; }
+.tracking-packages a:focus-visible { outline: 2px solid #3847e7; outline-offset: 4px; }

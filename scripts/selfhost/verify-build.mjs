@@ -6,6 +6,7 @@ import path from "node:path";
 import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const directory = mkdtempSync(path.join(tmpdir(), "miova-build-smoke-"));
@@ -62,6 +63,24 @@ try {
   } })).text();
   assert.equal(valid.includes(email), true, "Valid private admin must reach real owner workspace.");
   assert.equal(valid.includes("Operations workspace unavailable"), false);
+  const operatorHeaders = { Authorization: `Basic ${Buffer.from(`build-test:${password}`).toString("base64")}` };
+  for (const endpoint of ["/api/admin/orders", "/api/admin/after-sales", "/api/admin/shipping"]) {
+    assert.equal((await fetch(`${web}${endpoint}`, {headers: operatorHeaders})).status, 404, "Public bundle must not expose private admin APIs.");
+    assert.equal((await fetch(`${admin}${endpoint}`)).status, 401, "Private APIs require credentials on every request.");
+    const response = await fetch(`${admin}${endpoint}`, {headers: operatorHeaders});
+    assert.equal(response.status, 200, endpoint);
+    assert.equal((await response.json()).ok, true);
+  }
+  // Exercise an actual nonempty audit snapshot through the production RSC
+  // boundary: native SQLite records must not crash rendering after a first edit.
+  const fixtureDatabase = new DatabaseSync(path.join(directory, "commerce.sqlite"));
+  try {
+    fixtureDatabase.prepare("INSERT INTO shipping_events(id,owner_id,entity,entity_id,action,details_json,actor_id,created_at) VALUES(?,?,'carrier','smoke-carrier','created','{}',?,?)")
+      .run("isolated-audit", "isolated-build-test", "isolated-build-test", new Date().toISOString());
+  } finally { fixtureDatabase.close(); }
+  const auditedPage = await fetch(`${admin}/ops`, { headers: operatorHeaders });
+  assert.equal(auditedPage.status, 200, "An actual audit event must not break the RSC workspace.");
+  assert.equal((await auditedPage.text()).includes("isolated-audit"), true);
   console.info("Node production bundles verified: persistent empty catalog, payments disabled, forged Web identity blocked, private admin authenticated.");
 } finally {
   for (const child of children) {

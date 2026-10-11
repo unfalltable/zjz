@@ -1,4 +1,5 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
 export const orders = sqliteTable(
   "orders",
@@ -29,11 +30,14 @@ export const orders = sqliteTable(
     marketingOptIn: integer("marketing_opt_in", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    reviewStatus: text("review_status").notNull().default("unreviewed"),
+    reviewNote: text("review_note"),
   },
   (table) => [
     uniqueIndex("idx_orders_owner_number").on(table.ownerId, table.orderNumber),
     uniqueIndex("idx_orders_owner_idempotency").on(table.ownerId, table.idempotencyKey),
     index("idx_orders_owner_status").on(table.ownerId, table.status),
+    index("idx_orders_owner_review_created").on(table.ownerId, table.reviewStatus, table.createdAt),
   ]
 );
 
@@ -52,6 +56,7 @@ export const products = sqliteTable(
     metadataJson: text("metadata_json"),
     version: integer("version").notNull().default(0),
     stock: integer("stock").notNull().default(0),
+    shippingWeightGrams: integer("shipping_weight_grams").notNull().default(500),
     reserved: integer("reserved").notNull().default(0),
     inbound: integer("inbound").notNull().default(0),
     defaultFulfillment: text("default_fulfillment").notNull(),
@@ -97,3 +102,52 @@ export const catalogEvents = sqliteTable("catalog_events", {
   actorId: text("actor_id").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => [index("idx_catalog_events_owner_product").on(table.ownerId, table.productId)]);
+
+export const orderReservations = sqliteTable("order_reservations", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), orderId: text("order_id").notNull().references(() => orders.id),
+  productId: text("product_id").notNull().references(() => products.id), sku: text("sku").notNull(),
+  quantity: integer("quantity").notNull(), remaining: integer("remaining").notNull(), shipped: integer("shipped").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+}, (table) => [uniqueIndex("idx_order_reservations_owner_order_sku").on(table.ownerId, table.orderId, table.sku)]);
+
+export const shipments = sqliteTable("shipments", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), orderId: text("order_id").notNull().references(() => orders.id),
+  fulfillmentMode: text("fulfillment_mode").notNull(), carrierCode: text("carrier_code").notNull(),
+  trackingNumber: text("tracking_number").notNull(), trackingUrl: text("tracking_url"), linesJson: text("lines_json").notNull(),
+  status: text("status").notNull(), note: text("note"), version: integer("version").notNull().default(0),
+  createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("idx_shipments_owner_carrier_number").on(table.ownerId, table.carrierCode, table.trackingNumber), index("idx_shipments_owner_order").on(table.ownerId, table.orderId)]);
+
+export const afterSales = sqliteTable("after_sales", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), orderId: text("order_id").notNull().references(() => orders.id),
+  kind: text("kind").notNull(), reason: text("reason").notNull(), linesJson: text("lines_json").notNull(), amountCents: integer("amount_cents").notNull(),
+  status: text("status").notNull(), restocked: integer("restocked", { mode: "boolean" }).notNull().default(false), note: text("note"),
+  version: integer("version").notNull().default(0), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (table) => [index("idx_after_sales_owner_order").on(table.ownerId, table.orderId)]);
+
+export const adminOrderAudit = sqliteTable("admin_order_audit", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), orderId: text("order_id").notNull().references(() => orders.id),
+  action: text("action").notNull(), note: text("note"), detailsJson: text("details_json"), actorId: text("actor_id").notNull(), createdAt: text("created_at").notNull(),
+}, (table) => [index("idx_admin_order_audit_owner_order").on(table.ownerId, table.orderId, table.createdAt)]);
+
+export const adminOperationGuards = sqliteTable("admin_operation_guards", { id: text("id").primaryKey(), allowed: integer("allowed").notNull() });
+
+export const shippingCarriers = sqliteTable("shipping_carriers", {
+  ownerId: text("owner_id").notNull(), code: text("code").notNull(), name: text("name").notNull(), trackingUrlTemplate: text("tracking_url_template").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(), version: integer("version").notNull().default(0), updatedAt: text("updated_at").notNull(),
+}, (table) => [primaryKey({ columns: [table.ownerId, table.code] })]);
+
+export const shippingRules = sqliteTable("shipping_rules", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), name: text("name").notNull(), method: text("method").notNull(), countriesJson: text("countries_json").notNull(),
+  baseCents: integer("base_cents").notNull(), includedWeightGrams: integer("included_weight_grams").notNull(), stepWeightGrams: integer("step_weight_grams").notNull(), stepCents: integer("step_cents").notNull(),
+  freeAboveCents: integer("free_above_cents"), minDays: integer("min_days").notNull(), maxDays: integer("max_days").notNull(), carrierCode: text("carrier_code"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(), version: integer("version").notNull().default(0), updatedAt: text("updated_at").notNull(), mutationId: text("mutation_id").notNull(),
+}, (table) => [index("idx_shipping_rules_owner").on(table.ownerId), foreignKey({ columns: [table.ownerId, table.carrierCode], foreignColumns: [shippingCarriers.ownerId, shippingCarriers.code] })]);
+
+export const shippingRuleCountries = sqliteTable("shipping_rule_countries", {
+  ruleId: text("rule_id").notNull().references(() => shippingRules.id, { onDelete: "cascade" }), ownerId: text("owner_id").notNull(), method: text("method").notNull(), country: text("country").notNull(), enabled: integer("enabled", { mode: "boolean" }).notNull(),
+}, (table) => [primaryKey({ columns: [table.ruleId, table.country] }), uniqueIndex("idx_shipping_active_route").on(table.ownerId, table.method, table.country).where(sql`${table.enabled} = 1`)]);
+
+export const shippingEvents = sqliteTable("shipping_events", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), entity: text("entity").notNull(), entityId: text("entity_id").notNull(), action: text("action").notNull(), detailsJson: text("details_json").notNull(), actorId: text("actor_id").notNull(), createdAt: text("created_at").notNull(),
+}, (table) => [index("idx_shipping_events_owner").on(table.ownerId, table.createdAt)]);

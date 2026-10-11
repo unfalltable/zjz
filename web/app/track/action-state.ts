@@ -1,10 +1,11 @@
 import type { FulfillmentMode, OrderStatus } from "@shared/ops-types";
 import type { PaymentStatus } from "@backend/payments";
+import type { PublicFulfillment } from "@shared/public-fulfillment";
 
 export type TrackActionState = {
   kind: "idle" | "found" | "not_found" | "error";
   message: string;
-  order: null | {
+  order: null | (PublicFulfillment & {
     orderNumber: string;
     productName: string;
     amountCents: number;
@@ -17,7 +18,7 @@ export type TrackActionState = {
     progress: number;
     createdAt: string;
     updatedAt: string;
-  };
+  });
 };
 
 // Import this client-safe state directly rather than through a server action.

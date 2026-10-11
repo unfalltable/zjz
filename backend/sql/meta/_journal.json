@@ -22,6 +22,20 @@
       "when": 1791598831196,
       "tag": "0002_commerce_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791705600000,
+      "tag": "0003_admin_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791705600001,
+      "tag": "0004_shipping_settings",
+      "breakpoints": true
     }
   ]
 }

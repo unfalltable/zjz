@@ -30,7 +30,10 @@ export function createSqliteD1(database) {
       const before = database.prepare("SELECT total_changes() AS value").get().value;
       const compiled = database.prepare(sql);
       if (arrayRows) compiled.setReturnArrays(true);
-      const results = compiled.all(...bindings);
+      // node:sqlite returns null-prototype records. D1-compatible plain records
+      // also cross React Server Component boundaries safely after the first audit.
+      const rows = compiled.all(...bindings);
+      const results = arrayRows ? rows : rows.map((row) => ({ ...row }));
       // These SELECTs do not change SQLite changes(): audit INSERT ... changes() remains correct.
       const after = database.prepare("SELECT total_changes() AS value").get().value;
       const state = database.prepare("SELECT changes() AS changes, last_insert_rowid() AS lastRowId").get();

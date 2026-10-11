@@ -54,6 +54,10 @@ Node 后台验证仅接受后台服务上的已验证 Basic 凭据，不接受�
 6. 先检查本地商城目录接口，再替换已备份的 IP Nginx 配置。运行 `nginx -t` 成功后才 reload Nginx；不要重启共享 Nginx。失败时恢复原 IP 配置和原发布链接，再执行配置检查与 reload。
 7. 从外部访问 HTTPS、检查证书、购物页面和敏感操作保护；检查旧站保留和其他站点未受影响。通过检查后启用备份 timer。
 
+包含新增数据库迁移的发布使用 `bash scripts/selfhost/upgrade.sh <完整提交 SHA>`（先把该提交构建为对应发布目录）。脚本创建精确路径 `/srv/miova/data/deployment.lock`，停止两端服务、创建并验证一致性快照，再切换和启动新版本；新版本发现锁文件时仅允许读取，拒绝所有商品／库存／订单／物流／售后写入和商城订单保存。验证私有后台 API、数据库、公开隔离和维护写保护后才移除锁开放写入。
+
+失败时先停止两端，保留失败版本数据库快照，恢复升级前的一致性数据库和原发布链接后重启。不能仅把旧程序指向新迁移日志：旧迁移白名单会拒绝陌生版本。恢复只在维护锁尚未解除、没有新业务写入的验证阶段自动执行；开放写入后的故障必须单独评估，不能自动覆盖已经接受的订单。`restore-upgrade-backup.mjs` 仅允许明确的 `/srv/miova/data/backups/commerce-*.sqlite` 普通文件，核验完整性后恢复；两个服务必须先停止。
+
 模板 `150.158.141.45.conf` 指向独立证书 `/etc/miova/letsencrypt/live/miova-ip/fullchain.pem` 和 `privkey.pem`。新证书未签发时，初次部署可在服务器上的配置副本暂用现有宝塔 IP 证书，不改仓库模板；签发后切到独立路径，先执行 `nginx -t` 再 reload。IP 证书为短有效期证书，必须由实际执行者验证自动续期、HTTP-01 文件可达、续期后的 Nginx reload 以及到期告警；仅存在一个有效证书，不代表续期已配置。
 
 本部署的独立 Certbot 位于 `/opt/miova-certbot`，不替换宝塔或其他应用的证书工具。续期使用 `/etc/miova/letsencrypt`、`/var/lib/miova-acme`、`/var/log/miova-acme` 的隔离目录；HTTP-01 验证目录必须一直可达。执行 `miova-certificate.service` 验证检查流程，使用 Certbot `renew --dry-run` 验证挑战与续期，不将 staging 证书用于用户访问。

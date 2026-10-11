@@ -21,6 +21,7 @@ import type { StoreLocale } from "@shared/catalog";
 import { useStoreLocale } from "@/hooks/use-storefront";
 import { lookupOrderAction } from "./actions";
 import { initialTrackState, type TrackActionState } from "./action-state";
+import "./tracking.css";
 
 type Locale = StoreLocale;
 
@@ -163,16 +164,29 @@ function OrderResult({ order, locale }: { order: NonNullable<TrackActionState["o
   const t = text[locale];
   const currentIndex = statusOrder.indexOf(order.status);
   const routeLabel = order.routeModes.length > 1 ? t.split : t[order.fulfillmentMode];
+  const cancelled = order.reviewStatus === "cancelled";
+  const cancelledText = ({en:"Order cancelled",zh:"订单已取消",es:"Pedido cancelado"})[locale];
   return (
     <div className="tracking-card">
-      <div className="tracking-card-head"><div><span>{order.orderNumber}</span><h2>{order.productName}</h2></div><strong>{statusText[locale][order.status]}</strong></div>
-      <Progress value={order.progress} />
-      {order.paymentStatus === "pending" && <div className="tracking-payment"><Clock3 aria-hidden="true" /><div><strong>{t.payment}</strong><span>{t.paymentBody}</span></div></div>}
-      <ol className="tracking-timeline">
+      <div className="tracking-card-head"><div><span>{order.orderNumber}</span><h2>{order.productName}</h2></div><strong>{cancelled ? cancelledText : statusText[locale][order.status]}</strong></div>
+      {!cancelled && <Progress value={order.progress} />}
+      {!cancelled && order.paymentStatus === "pending" && <div className="tracking-payment"><Clock3 aria-hidden="true" /><div><strong>{t.payment}</strong><span>{t.paymentBody}</span></div></div>}
+      {order.reviewStatus === "confirmed" && <p>{({en:"Recipient details reviewed. Dispatch still requires completed payment.",zh:"收件资料已审核。发货仍需完成付款。",es:"Datos del destinatario revisados. El envío requiere el pago confirmado."})[locale]}</p>}
+      {cancelled && <p>{({en:"This order will not be dispatched. Any pending refund requires separate processing and is not marked completed.",zh:"此订单不会安排发货。若有待退款款项，需要另外处理，并不代表已退款。",es:"Este pedido no se enviará. Cualquier reembolso pendiente debe procesarse por separado; no se considera completado."})[locale]}</p>}
+      {!cancelled && <ol className="tracking-timeline">
         {statusOrder.map((status, index) => (
           <li key={status} data-active={index <= currentIndex}><span>{index < currentIndex ? <Check aria-hidden="true" /> : index + 1}</span><strong>{statusText[locale][status]}</strong></li>
         ))}
-      </ol>
+      </ol>}
+      {!!order.shipments.length && <section className="tracking-packages" aria-label={({en:"Packages",zh:"包裹物流",es:"Paquetes"})[locale]}>
+        <h3>{({en:"Packages",zh:"包裹物流",es:"Paquetes"})[locale]}</h3>
+        <p>{({en:"Milestones below are entered manually by the store, not live carrier scans. Open the carrier link for carrier-provided tracking.",zh:"以下节点为商家人工登记，不是承运商实时扫描。承运商实际轨迹请打开快递查询链接。",es:"Los hitos se registran manualmente, no son escaneos en vivo. Abre el enlace del transportista para consultar su seguimiento."})[locale]}</p>
+        {order.shipments.map((shipment) => <article key={`${shipment.carrierName}:${shipment.trackingNumber}`}>
+          <strong>{shipment.carrierName}</strong><span>{shipment.trackingNumber}</span><span>{({shipped:{en:"Dispatched",zh:"已发货",es:"Enviado"},transit:{en:"In transit",zh:"运输中",es:"En tránsito"},delivered:{en:"Delivered",zh:"已送达",es:"Entregado"}})[shipment.status][locale]}</span>
+          {shipment.trackingUrl && <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer">{({en:"Carrier tracking",zh:"承运商查询",es:"Seguimiento del transportista"})[locale]}</a>}
+          <small>{t.updated}: {formatDate(shipment.updatedAt, locale)}</small>
+        </article>)}
+      </section>}
       <div className="tracking-details">
         <Detail icon={Truck} label={t.delivery} value={order.deliveryMethod === "standard" || order.deliveryMethod === "express" || order.deliveryMethod === "priority" ? t[order.deliveryMethod] : order.deliveryMethod} />
         <Detail icon={PackageCheck} label={t.route} value={routeLabel} />

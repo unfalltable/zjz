@@ -47,6 +47,7 @@ export type OpsProduct = {
   image?: string | null;
   version?: number;
   metadata?: OpsProductMetadata | null;
+  shippingWeightGrams?: number;
 };
 
 export type OpsProductMetadata = {
@@ -65,7 +66,7 @@ export type OpsSnapshot = {
 export type OpsAuditEvent = {
   id: string;
   time: string;
-  entity: "order" | "inventory" | "catalog";
+  entity: "order" | "inventory" | "catalog" | "shipping";
   entityId: string;
   action: string;
   actorId: string;

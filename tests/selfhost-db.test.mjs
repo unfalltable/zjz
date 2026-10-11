@@ -11,7 +11,7 @@ import { env } from "../backend/api/runtime/selfhost/env.mjs";
 import { migrateSelfhostDatabase } from "../backend/api/runtime/selfhost/migrate.mjs";
 
 const sourceSql = fileURLToPath(new URL("../backend/sql/", import.meta.url));
-const tags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation"];
+const tags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation", "0003_admin_operations", "0004_shipping_settings"];
 function memory(t) {
   const adapter = createSqliteD1(new DatabaseSync(":memory:"));
   t.after(() => adapter.close());
@@ -46,6 +46,11 @@ test("SQLite D1 binds values and supports all/first/raw with accurate write meta
   assert.equal(result.meta.last_row_id, 1);
   assert.equal((await db.prepare("SELECT * FROM items").all()).meta.changes, 0);
   assert.equal(await db.prepare("SELECT value FROM items").first("value"), "one");
+  const firstRow = await db.prepare("SELECT id, value FROM items").first();
+  assert.equal(Object.getPrototypeOf(firstRow), Object.prototype, "rows must be plain records for React Server Components");
+  assert.deepEqual(firstRow, { id: 1, value: "one" });
+  const batchRows = await db.batch([db.prepare("SELECT id, value FROM items")]);
+  assert.equal(Object.getPrototypeOf(batchRows[0].results[0]), Object.prototype);
   assert.equal(await db.prepare("SELECT value FROM items WHERE id = 99").first(), null);
   assert.deepEqual(await db.prepare("SELECT id, value FROM items").raw(), [[1, "one"]]);
   assert.deepEqual(await db.prepare("SELECT id, value FROM items").raw({ columnNames: true }), [["id", "value"], [1, "one"]]);
@@ -132,7 +137,7 @@ test("migrations fail closed on changed history without modifying data", async (
   writeFileSync(filename, `${readFileSync(filename, "utf8")}\n-- changed history`);
   assert.throws(() => migrateSelfhostDatabase(db, { directory }), /applied_migration_changed/);
   assert.equal(await db.prepare("SELECT count(*) AS n FROM products").first("n"), 1);
-  assert.equal(await db.prepare("SELECT count(*) AS n FROM _miova_migrations").first("n"), 3);
+  assert.equal(await db.prepare("SELECT count(*) AS n FROM _miova_migrations").first("n"), tags.length);
 });
 
 test("a migration SQL failure rolls back schema and journal creation together", (t) => {
@@ -223,6 +228,27 @@ test("Node env is lazy/dynamic and the global binding cannot silently switch dat
   assert.throws(() => env.DB, /path_changed/);
   assert.equal(existsSync(process.env.MIOVA_SQLITE_PATH), false);
   assert.throws(() => { env.DB = db; }, /read_only/);
+});
+
+test("deployment maintenance file is observed dynamically without creating a database", (t) => {
+  const directory = temporaryDirectory(t);
+  const previousPath = process.env.MIOVA_SQLITE_PATH;
+  const previousMaintenance = process.env.MIOVA_MAINTENANCE;
+  t.after(() => {
+    if (previousPath === undefined) delete process.env.MIOVA_SQLITE_PATH; else process.env.MIOVA_SQLITE_PATH = previousPath;
+    if (previousMaintenance === undefined) delete process.env.MIOVA_MAINTENANCE; else process.env.MIOVA_MAINTENANCE = previousMaintenance;
+  });
+  process.env.MIOVA_SQLITE_PATH = path.join(directory, "commerce.sqlite");
+  delete process.env.MIOVA_MAINTENANCE;
+  assert.equal(env.MIOVA_MAINTENANCE, "false");
+  const lock = path.join(directory, "deployment.lock");
+  writeFileSync(lock, "isolated test");
+  assert.equal(env.MIOVA_MAINTENANCE, "true");
+  rmSync(lock);
+  assert.equal(env.MIOVA_MAINTENANCE, "false");
+  process.env.MIOVA_MAINTENANCE = "true";
+  assert.equal(env.MIOVA_MAINTENANCE, "true");
+  assert.equal(existsSync(process.env.MIOVA_SQLITE_PATH), false);
 });
 
 test("database handles refuse operations after close", async (t) => {

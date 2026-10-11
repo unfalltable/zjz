@@ -23,6 +23,7 @@ const editableProductSchema = z.object({
   category: categorySchema.optional(), image: imageSchema.optional(),
   expectedVersion: z.number().int().min(0).optional(),
   metadata: metadataSchema.optional(),
+  shippingWeightGrams: z.number().int().min(1).max(1000000).optional(),
 });
 export type CatalogProductUpdate = z.infer<typeof editableProductSchema>;
 const newProductSchema = editableProductSchema.omit({ status: true, expectedVersion: true }).extend({
@@ -41,11 +42,12 @@ type CatalogRow = {
   defaultFulfillment: FulfillmentMode; status: "active" | "paused"; updatedAt: string;
   storefrontId: string | null; priceCents: number | null; compareAtCents: number | null;
   category: string | null; image: string | null; metadataJson: string | null; version: number;
+  shippingWeightGrams: number;
 };
 const selectProductColumns = `id, sku, name, stock, reserved, inbound,
   default_fulfillment AS defaultFulfillment, status, updated_at AS updatedAt,
   storefront_id AS storefrontId, price_cents AS priceCents, compare_at_cents AS compareAtCents,
-  category, image, metadata_json AS metadataJson, version`;
+  category, image, metadata_json AS metadataJson, version, shipping_weight_grams AS shippingWeightGrams`;
 
 export async function getStorefrontProducts(ownerId: string): Promise<StoreProduct[]> {
   // Compatibility for server callers that explicitly need a complete catalogue.
@@ -161,6 +163,7 @@ export async function getOpsProducts(ownerId: string): Promise<OpsProduct[]> {
     category: categorySchema.safeParse(row.category).success ? row.category as OpsProduct["category"] : null,
     image: row.image, version: row.version,
     metadata: readMetadata(row.metadataJson),
+    shippingWeightGrams: row.shippingWeightGrams,
   }));
 }
 
@@ -198,10 +201,10 @@ export async function createCatalogProduct(ownerId: string, input: NewCatalogPro
   const results = await db.batch([
     db.prepare(`INSERT INTO products
       (id, owner_id, sku, name, storefront_id, price_cents, compare_at_cents, category, image, metadata_json,
-        stock, reserved, inbound, default_fulfillment, status, version, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 'paused', 0, ?) ON CONFLICT DO NOTHING`)
+        stock, reserved, inbound, default_fulfillment, status, version, updated_at, shipping_weight_grams)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 'paused', 0, ?, ?) ON CONFLICT DO NOTHING`)
       .bind(id, ownerId, product.sku, product.name, product.storefrontId, product.priceCents, compareAt,
-        product.category, product.image, product.metadata ? JSON.stringify(product.metadata) : null, product.defaultFulfillment, now),
+        product.category, product.image, product.metadata ? JSON.stringify(product.metadata) : null, product.defaultFulfillment, now, product.shippingWeightGrams ?? 500),
     db.prepare(catalogAuditSql).bind(crypto.randomUUID(), "created", JSON.stringify({ stock: 0, status: "paused", priceCents: product.priceCents }), ownerId, now, id, ownerId),
   ]);
   return (results[0].meta.changes ?? 0) > 0 ? "created" : "exists";
@@ -229,11 +232,11 @@ export async function updateCatalogProduct(ownerId: string, sku: string, input: 
   const db = getD1();
   try {
     const results = await db.batch([db.prepare(`UPDATE products SET price_cents = ?, compare_at_cents = ?, status = ?,
-      default_fulfillment = ?, storefront_id = ?, name = ?, category = ?, image = ?, metadata_json = ?, version = version + 1, updated_at = ?
+      default_fulfillment = ?, storefront_id = ?, name = ?, category = ?, image = ?, metadata_json = ?, version = version + 1, updated_at = ?, shipping_weight_grams = ?
       WHERE owner_id = ? AND sku = ? AND version = ?`).bind(
       update.priceCents, compareAtCents, update.status, update.defaultFulfillment ?? current.defaultFulfillment,
       storefrontId, update.name ?? current.name, category, image, update.metadata ? JSON.stringify(update.metadata) : current.metadataJson,
-      now, ownerId, sku, current.version,
+      now, update.shippingWeightGrams ?? current.shippingWeightGrams, ownerId, sku, current.version,
     ), db.prepare(catalogAuditSql).bind(crypto.randomUUID(), "updated", JSON.stringify({ priceCents: update.priceCents, status: update.status }), ownerId, now, current.id, ownerId)]);
     return (results[0].meta.changes ?? 0) > 0;
   } catch (error) {
@@ -258,6 +261,7 @@ function toStoreProduct(row: CatalogRow): StoreProduct | null {
     rating: 0, reviews: 0, category: category.data, image: row.image!,
     color: metadata?.color ?? "blue", inventory: availableInventory(row.stock, row.reserved),
     fulfillmentMode: row.defaultFulfillment, inventoryReserved: false,
+    shippingWeightGrams: row.shippingWeightGrams,
     badge: metadata?.badge ?? emptyText, description: metadata?.description ?? nameText, detail: metadata?.detail ?? nameText,
   };
 }

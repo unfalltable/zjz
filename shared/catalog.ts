@@ -17,6 +17,7 @@ export type StoreProduct = {
   priceCents?: number;
   compareAtCents?: number | null;
   inventoryReserved?: false;
+  shippingWeightGrams?: number;
   badge: Record<StoreLocale, string>;
   description: Record<StoreLocale, string>;
   detail: Record<StoreLocale, string>;

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const defaultDirectory = fileURLToPath(new URL("../../../sql/", import.meta.url));
-const reviewedTags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation"];
+const reviewedTags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation", "0003_admin_operations", "0004_shipping_settings"];
 
 function readOrdinaryFile(filename) {
   const stat = lstatSync(filename);

@@ -30,6 +30,8 @@ import { useLiveCatalog, useStoreLocale } from "@/hooks/use-storefront";
 import { commerceCopy } from "@/lib/commerce-copy";
 import { clearCheckoutRetry, fetchLiveCatalog, markCheckoutAttempted, parseShoppingBag, readBrowserValue, retryKeyFor, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
 import { createPendingOrderAction, type CreateOrderResult } from "./actions";
+import { fetchShippingQuotes } from "@/lib/shipping";
+import type { ShippingQuotesResponse } from "@shared/shipping";
 
 type CheckoutStep = 1 | 2 | 3;
 type DeliveryMethod = "standard" | "express" | "priority";
@@ -89,6 +91,7 @@ export default function CheckoutPage() {
   const [savedTotalCents, setSavedTotalCents] = useState(0);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [isSubmitting, startSubmit] = useTransition();
+  const [quoteState, setQuoteState] = useState<{ key: string; response: ShippingQuotesResponse | null; error: boolean }>({ key: "", response: null, error: false });
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const submittingRef = useRef(false);
   // Contact/address data exists only in this page's memory, never in persisted retry metadata.
@@ -114,9 +117,28 @@ export default function CheckoutPage() {
     () => cartLines.reduce((sum, product) => sum + (product.priceCents ?? Math.round(product.price * 100)) * cart[product.id], 0) / 100,
     [cart, cartLines]
   );
-  const selectedDelivery = deliveryOptions.find((option) => option.id === deliveryMethod) ?? deliveryOptions[0];
-  const shipping = deliveryMethod === "standard" && subtotal >= 75 ? 0 : selectedDelivery.price;
-  const total = subtotal + shipping;
+  const shippingItemsJson = JSON.stringify(Object.entries(cart).sort(([a], [b]) => a.localeCompare(b)).map(([id, quantity]) => ({ id, quantity })));
+  const quoteKey = `${destination}:${shippingItemsJson}:${cartLines.map((item) => `${item.id}:${item.priceCents}:${item.shippingWeightGrams}`).join(",")}`;
+  const quoteResponse = quoteState.key === quoteKey ? quoteState.response : null;
+  const quoteError = quoteState.key === quoteKey && quoteState.error;
+  const selectedQuote = quoteResponse?.quotes.find((quote) => quote.method === deliveryMethod);
+  const shipping = selectedQuote?.available && selectedQuote.shippingCents !== null ? selectedQuote.shippingCents / 100 : null;
+  const total = subtotal + (shipping ?? 0);
+  const shippingUnavailable = shipping === null || quoteError;
+  const shippingMessage = quoteError
+    ? ({ en: "Shipping could not be quoted. Retry before continuing.", zh: "暂时无法获取运费，请重试后继续。", es: "No se pudo calcular el envío. Reintenta antes de continuar." })[locale]
+    : ({ en: "No shipping service is currently available for this destination.", zh: "该目的地目前没有可用的配送服务。", es: "No hay un servicio de envío disponible para este destino." })[locale];
+  const shippingLoadingText = ({ en: "Calculating shipping…", zh: "正在计算运费…", es: "Calculando envío…" })[locale];
+  useEffect(() => {
+    if (!hydrated || catalogLoading || catalogError || !cartLines.length) return;
+    const controller = new AbortController();
+    fetchShippingQuotes(destination, JSON.parse(shippingItemsJson), controller.signal).then((response) => {
+      setQuoteState({ key: quoteKey, response, error: false });
+      setDeliveryMethod((current) => response.quotes.some((quote) => quote.method === current && quote.available)
+        ? current : response.quotes.find((quote) => quote.available)?.method ?? current);
+    }).catch(() => { if (!controller.signal.aborted) setQuoteState({ key: quoteKey, response: null, error: true }); });
+    return () => controller.abort();
+  }, [hydrated, catalogLoading, catalogError, destination, shippingItemsJson, quoteKey, cartLines.length]);
   const progress = step === 1 ? 34 : step === 2 ? 67 : 100;
   const invalidBag = shoppingBagNeedsReview(cart, products);
 
@@ -164,7 +186,7 @@ export default function CheckoutPage() {
 
   const moveForward = () => {
     if (needsConfirmation) { confirmPreviousSave(); return; }
-    if (catalogLoading || catalogError || invalidBag || !cartLines.length) return;
+    if (catalogLoading || catalogError || invalidBag || !cartLines.length || shippingUnavailable) return;
     if (!validateCurrentStep()) return;
     if (step < 3) {
       setStep((step + 1) as CheckoutStep);
@@ -207,7 +229,7 @@ export default function CheckoutPage() {
 
   const submitPendingOrder = () => {
     if (needsConfirmation) { confirmPreviousSave(); return; }
-    if (submittingRef.current || invalidBag || !cartLines.length) return;
+    if (submittingRef.current || invalidBag || !cartLines.length || shippingUnavailable) return;
     submittingRef.current = true;
     setSubmissionError("");
     startSubmit(async () => {
@@ -226,9 +248,18 @@ export default function CheckoutPage() {
           window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
           return;
         }
+        const latestQuote = await fetchShippingQuotes(destination, JSON.parse(shippingItemsJson));
+        if (latestQuote.revision !== quoteResponse?.revision ||
+          latestQuote.quotes.find((quote) => quote.method === deliveryMethod)?.shippingCents !== selectedQuote?.shippingCents) {
+          setQuoteState({ key: quoteKey, response: latestQuote, error: false });
+          setStep(2);
+          setSubmissionError(({ en: "Shipping changed. Review the updated service and price before saving.", zh: "运费已变化，请重新核对配送服务和价格再保存。", es: "El envío ha cambiado. Revisa el servicio y el precio antes de guardar." })[locale]);
+          return;
+        }
         const input = {
           ...Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, name === "email" ? value.trim().toLowerCase() : value.trim()])),
           destination, deliveryMethod, marketingOptIn: marketing, website: "",
+          shippingRevision: latestQuote.revision,
           items: Object.entries(cart).sort(([a], [b]) => a.localeCompare(b)).map(([id, quantity]) => ({ id, quantity })),
         };
         const idempotencyKey = await retryKeyFor(input);
@@ -239,7 +270,7 @@ export default function CheckoutPage() {
         if (!result.ok) {
           setNeedsConfirmation(result.status === 503);
           if (result.code === "idempotency_conflict") clearCheckoutRetry();
-          setSubmissionError(/available|inventory|stock|quantity/i.test(result.message) ? t.stockChanged : t.saveError);
+          setSubmissionError(result.code === "shipping_quote_changed" || result.code === "shipping_unavailable" ? shippingMessage : /available|inventory|stock|quantity/i.test(result.message) ? t.stockChanged : t.saveError);
           window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
           return;
         }
@@ -371,21 +402,21 @@ export default function CheckoutPage() {
                 </div>
                 <CheckoutField label={t.phone} name="phone" type="tel" value={fields.phone} error={errors.phone} autoComplete="tel" onChange={updateField} onBlur={onBlur} />
               </fieldset>
-              <Button type="submit" className="checkout-next" disabled={invalidBag || isSubmitting}>{t.continueShipping}</Button>
+              <Button type="submit" className="checkout-next" disabled={invalidBag || isSubmitting || shippingUnavailable}>{t.continueShipping}</Button>
             </form>
           )}
 
           {step === 2 && (
             <div className="checkout-form">
               <RadioGroup value={deliveryMethod} onValueChange={(value) => setDeliveryMethod(value as DeliveryMethod)} className="delivery-options" aria-label={t.shippingMethod}>
-                {deliveryOptions.map((option) => { const Icon = option.icon; const isFree = option.id === "standard" && subtotal >= 75; return (
+                {deliveryOptions.map((option) => { const Icon = option.icon; const quote = quoteResponse?.quotes.find((candidate) => candidate.method === option.id); return (
                   <label className="delivery-option" data-selected={deliveryMethod === option.id} key={option.id}>
-                    <RadioGroupItem value={option.id} /><Icon aria-hidden="true" /><span><strong>{t[option.id]}</strong><small>{t[`${option.id}Timing`]}</small></span><b>{isFree ? t.free : `$${option.price.toFixed(2)}`}</b>
+                    <RadioGroupItem value={option.id} disabled={!quote?.available} /><Icon aria-hidden="true" /><span><strong>{t[option.id]}</strong><small>{quote?.available ? `${quote.minDays}–${quote.maxDays} ${({en:"business days",zh:"工作日",es:"días hábiles"})[locale]}` : "—"}</small></span><b>{quote?.available && quote.shippingCents !== null ? quote.shippingCents === 0 ? t.free : `$${(quote.shippingCents / 100).toFixed(2)}` : "—"}</b>
                   </label>
                 ); })}
               </RadioGroup>
               <p>{t.timingNote}</p>
-              <div className="checkout-inline-actions"><Button variant="outline" onClick={() => setStep(1)}>{t.back}</Button><Button className="checkout-next" onClick={moveForward} disabled={invalidBag}>{t.reviewButton}</Button></div>
+              <div className="checkout-inline-actions"><Button variant="outline" onClick={() => setStep(1)}>{t.back}</Button><Button className="checkout-next" onClick={moveForward} disabled={invalidBag || shippingUnavailable}>{t.reviewButton}</Button></div>
             </div>
           )}
 
@@ -396,7 +427,7 @@ export default function CheckoutPage() {
                 <div><ShieldCheck aria-hidden="true" /><span><strong>{t.draft}</strong><small>{t.noCard}</small></span></div>
                 <p>{t.noReservation}</p>
               </div>
-              <div className="checkout-inline-actions"><Button variant="outline" type="button" onClick={() => setStep(2)} disabled={isSubmitting}>{t.back}</Button><Button type="submit" className="checkout-next" disabled={isSubmitting || invalidBag}><LockKeyhole aria-hidden="true" />{isSubmitting ? t.saving : `${t.save} · $${total.toFixed(2)}`}</Button></div>
+              <div className="checkout-inline-actions"><Button variant="outline" type="button" onClick={() => setStep(2)} disabled={isSubmitting}>{t.back}</Button><Button type="submit" className="checkout-next" disabled={isSubmitting || invalidBag || shippingUnavailable}><LockKeyhole aria-hidden="true" />{isSubmitting ? t.saving : `${t.save} · $${total.toFixed(2)}`}</Button></div>
             </form>
           )}
         </section>
@@ -404,7 +435,8 @@ export default function CheckoutPage() {
         <aside className="checkout-summary" aria-labelledby="summary-title">
           <div className="summary-heading"><h2 id="summary-title">{t.summary}</h2><a href="/">{t.editBag}</a></div>
           <div className="summary-lines">{cartLines.map((product) => <div className="summary-line" key={product.id}><div className={`summary-media store-product-${product.color}`}><Image src={product.image} alt="" width={160} height={160} /><span>{cart[product.id]}</span></div><div><strong>{product.name}</strong><small>{product.description[locale]}</small><span>{product.sku}</span></div><b>${(product.price * cart[product.id]).toFixed(2)}</b></div>)}</div>
-          <dl className="summary-totals"><div><dt>{t.subtotal}</dt><dd>${subtotal.toFixed(2)}</dd></div><div><dt>{t.shipping}</dt><dd>{shipping === 0 ? t.free : `$${shipping.toFixed(2)}`}</dd></div><div><dt>{t.duties}</dt><dd>{t.notCalculated}</dd></div><div className="summary-total"><dt>{t.estimate}</dt><dd><small>USD</small>${total.toFixed(2)}</dd></div></dl>
+          <dl className="summary-totals"><div><dt>{t.subtotal}</dt><dd>${subtotal.toFixed(2)}</dd></div><div><dt>{t.shipping}</dt><dd>{shipping === null ? "—" : shipping === 0 ? t.free : `$${shipping.toFixed(2)}`}</dd></div><div><dt>{t.duties}</dt><dd>{t.notCalculated}</dd></div><div className="summary-total"><dt>{t.estimate}</dt><dd><small>USD</small>{shipping === null ? "—" : `$${total.toFixed(2)}`}</dd></div></dl>
+          {shippingUnavailable && <div role="status"><p>{!quoteResponse && !quoteError ? shippingLoadingText : shippingMessage}</p>{quoteError && <Button variant="outline" onClick={() => { setQuoteState({key:quoteKey,response:null,error:false}); fetchShippingQuotes(destination, JSON.parse(shippingItemsJson)).then((response) => setQuoteState({key:quoteKey,response,error:false})).catch(() => setQuoteState({key:quoteKey,response:null,error:true})); }}>{t.retry}</Button>}</div>}
           <p>{t.dutyNote}</p>
           <div className="summary-trust"><div><LockKeyhole aria-hidden="true" /><span><strong>{t.noCharge}</strong><small>{t.noReservation}</small></span></div></div>
         </aside>

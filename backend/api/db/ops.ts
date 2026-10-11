@@ -1,7 +1,7 @@
 import { getD1 } from "./index";
 import { getOpsProducts } from "./catalog";
-import { statusProgress, validateOrderTransition, validateStockAdjustment } from "@backend/domain/commerce";
-import { updateOrderStatusSql, insertOrderStatusEventSql, restockProductSql, insertInventoryEventSql } from "@backend/domain/commerce-sql";
+import { validateOrderTransition, validateStockAdjustment } from "@backend/domain/commerce";
+import { restockProductSql, insertInventoryEventSql } from "@backend/domain/commerce-sql";
 import type { FulfillmentMode, OpsAuditEvent, OpsOrder, OpsSnapshot, OrderStatus } from "@shared/ops-types";
 
 // Compatibility for the admin shell: an unavailable database must not look like live demo sales.
@@ -37,14 +37,9 @@ export async function setOrderStatus(ownerId: string, orderNumber: string, statu
   const transition = validateOrderTransition(current.status, status, current.paymentStatus);
   if (transition === "unchanged") return "updated" as const;
   if (transition !== "allowed") return transition;
-  const now = new Date().toISOString();
-  // The payment and version guards live in the UPDATE, not just in the preceding read.
-  // D1 batch rolls the mutation back if its audit INSERT fails.
-  const results = await db.batch([
-    db.prepare(updateOrderStatusSql).bind(status, statusProgress[status], now, ownerId, orderNumber, current.status, current.version),
-    db.prepare(insertOrderStatusEventSql).bind(crypto.randomUUID(), current.status, ownerId, now, ownerId, orderNumber),
-  ]);
-  return (results[0].meta.changes ?? 0) > 0 ? "updated" as const : "conflict" as const;
+  // Deprecated status-only workflow: a status edit must not bypass confirmation,
+  // reservations, a real package or its tracking number. Use admin-commerce instead.
+  return "invalid_transition" as const;
 }
 
 export async function addProductStock(ownerId: string, sku: string, quantity: number, note?: string): Promise<boolean> {
@@ -68,14 +63,22 @@ async function getAuditEvents(ownerId: string): Promise<OpsAuditEvent[]> {
     FROM order_events e JOIN orders o ON o.id = e.order_id WHERE e.owner_id = ? AND o.owner_id = ?
     UNION ALL
     SELECT e.id, e.created_at AS time, 'inventory' AS entity, p.sku AS entityId,
-      'restocked' AS action, e.actor_id AS actorId,
+      CASE WHEN e.quantity < 0 THEN 'dispatched' WHEN e.note LIKE 'Verified return %' THEN 'return_restocked' ELSE 'restocked' END AS action, e.actor_id AS actorId,
       json_object('quantity', e.quantity, 'stock', e.resulting_stock, 'note', e.note) AS details
     FROM inventory_events e JOIN products p ON p.id = e.product_id WHERE e.owner_id = ? AND p.owner_id = ?
     UNION ALL
     SELECT e.id, e.created_at AS time, 'catalog' AS entity, p.sku AS entityId,
       e.action, e.actor_id AS actorId, e.details_json AS details
     FROM catalog_events e JOIN products p ON p.id = e.product_id WHERE e.owner_id = ? AND p.owner_id = ?
-  ) ORDER BY time DESC, id DESC LIMIT 100`).bind(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId).all<OpsAuditEvent>();
+    UNION ALL
+    SELECT e.id, e.created_at AS time, 'order' AS entity, o.order_number AS entityId,
+      e.action, e.actor_id AS actorId, json_object('note', e.note, 'details', json(e.details_json)) AS details
+    FROM admin_order_audit e JOIN orders o ON o.id = e.order_id WHERE e.owner_id = ? AND o.owner_id = ?
+    UNION ALL
+    SELECT e.id, e.created_at AS time, 'shipping' AS entity, e.entity_id AS entityId,
+      e.entity || '_' || e.action AS action, e.actor_id AS actorId, e.details_json AS details
+    FROM shipping_events e WHERE e.owner_id = ?
+  ) ORDER BY time DESC, id DESC LIMIT 100`).bind(ownerId, ownerId, ownerId, ownerId, ownerId, ownerId, ownerId, ownerId, ownerId).all<OpsAuditEvent>();
   return events.results;
 }
 

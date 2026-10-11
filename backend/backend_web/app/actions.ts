@@ -45,12 +45,14 @@ const productSchema = z.object({
   defaultFulfillment: z.enum(fulfillmentModes),
   expectedVersion: z.coerce.number().int().min(0).optional(),
   metadata: z.object({ color: z.enum(["blue", "ice", "coral"]), badge: localizedSchema, description: localizedSchema, detail: localizedSchema }),
+  shippingWeightGrams: z.coerce.number().int().min(1).max(1000000).default(500),
 }).refine((value) => value.compareAtCents === null || value.compareAtCents > value.priceCents);
 
 export async function updateOrderStatusAction(
   _previousState: OpsActionState,
   formData: FormData
 ): Promise<OpsActionState> {
+  if (maintenance()) return actionError("Deployment maintenance: changes are temporarily paused.");
   const user = await getChatGPTUser();
   if (!user) return actionError("Sign in before changing an order.");
   if (!isStoreOwner(user.userId)) return actionError("This account cannot manage the store.");
@@ -91,6 +93,7 @@ export async function addStockAction(
   _previousState: OpsActionState,
   formData: FormData
 ): Promise<OpsActionState> {
+  if (maintenance()) return actionError("Deployment maintenance: changes are temporarily paused.");
   const user = await getChatGPTUser();
   if (!user) return actionError("Sign in before changing inventory.");
   if (!isStoreOwner(user.userId)) return actionError("This account cannot manage the store.");
@@ -125,6 +128,7 @@ export async function addStockAction(
 }
 
 export async function importProductsAction(_previousState: OpsActionState): Promise<OpsActionState> {
+  if (maintenance()) return actionError("Deployment maintenance: changes are temporarily paused.");
   const user = await getChatGPTUser();
   if (!user || !isStoreOwner(user.userId)) return actionError("Only the store owner can import products.");
   try {
@@ -138,6 +142,7 @@ export async function importProductsAction(_previousState: OpsActionState): Prom
 }
 
 export async function saveProductAction(_previousState: OpsActionState, formData: FormData): Promise<OpsActionState> {
+  if (maintenance()) return actionError("Deployment maintenance: changes are temporarily paused.");
   const user = await getChatGPTUser();
   if (!user || !isStoreOwner(user.userId)) return actionError("Only the store owner can manage products.");
   const parsed = productSchema.safeParse({
@@ -152,6 +157,7 @@ export async function saveProductAction(_previousState: OpsActionState, formData
       description: Object.fromEntries(["en", "zh", "es"].map((locale) => [locale, formData.get(`description_${locale}`) ?? ""])),
       detail: Object.fromEntries(["en", "zh", "es"].map((locale) => [locale, formData.get(`detail_${locale}`) ?? ""])),
     },
+    shippingWeightGrams: formData.has("shippingWeightGrams") ? formData.get("shippingWeightGrams") : undefined,
   });
   if (!parsed.success) return actionError("Check product fields: USD price above zero, compare-at above price, a unique lowercase URL ID, and an HTTPS or /products/ image.");
   const { sku, ...input } = parsed.data;
@@ -179,3 +185,5 @@ function isStoreOwner(userId: string) {
   const ownerId = (env as unknown as Record<string, string | undefined>).STORE_OWNER_ID?.trim();
   return Boolean(ownerId && ownerId === userId);
 }
+
+function maintenance() { return (env as unknown as Record<string, string | undefined>).MIOVA_MAINTENANCE === "true"; }
