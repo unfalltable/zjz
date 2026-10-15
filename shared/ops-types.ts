@@ -45,12 +45,18 @@ export type OpsProduct = {
   inventory?: number;
   category?: "home" | "tech" | "wear" | null;
   image?: string | null;
+  images?: string[];
   version?: number;
   metadata?: OpsProductMetadata | null;
   shippingWeightGrams?: number;
+  productGroupId?: string | null;
+  groupSku?: string;
+  variantAttributes?: Record<string, string>;
+  isVariant?: boolean;
 };
 
 export type OpsProductMetadata = {
+  images?: string[];
   color: "blue" | "ice" | "coral";
   badge: Record<"en" | "zh" | "es", string>;
   description: Record<"en" | "zh" | "es", string>;

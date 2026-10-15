@@ -63,6 +63,35 @@ void main() {
       restored.dispose();
     },
   );
+  test('Equivalent email, whitespace and item ordering reuse the retry key', () async {
+    final model = testModel();
+    await model.initialize();
+    final first = await model.checkoutKeyFor({
+      'email': ' Buyer@Example.com ', 'address': ' 1 Test Street ',
+      'items': [
+        {'id': 'nova-red', 'quantity': 1},
+        {'id': 'nova-blue', 'quantity': 2},
+      ],
+      'expectedSubtotalCents': 1000, 'expectedShippingCents': 0,
+    });
+    expect(await model.checkoutKeyFor({
+      'expectedShippingCents': 0, 'expectedSubtotalCents': 1000,
+      'items': [
+        {'id': 'nova-blue', 'quantity': 2},
+        {'id': 'nova-red', 'quantity': 1},
+      ],
+      'address': '1 Test Street', 'email': 'buyer@example.com',
+    }), first);
+    expect(await model.checkoutKeyFor({
+      'email': 'buyer@example.com', 'address': '1 Test Street',
+      'items': [
+        {'id': 'nova-blue', 'quantity': 1},
+        {'id': 'nova-red', 'quantity': 1},
+      ],
+      'expectedSubtotalCents': 1000, 'expectedShippingCents': 0,
+    }), isNot(first));
+    model.dispose();
+  });
   test('Idempotency key is UUID v4', () {
     final first = newIdempotencyKey();
     expect(

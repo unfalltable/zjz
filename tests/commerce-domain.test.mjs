@@ -148,3 +148,16 @@ test("admin next-status options match the server state machine", () => {
     }
   }
 });
+
+test("reviewed amounts are bounded pairs and participate in checkout intent", async () => {
+  const amounts = { expectedSubtotalCents: 3123, expectedShippingCents: 0 };
+  const first = await checkoutRequestFingerprint(parsed(amounts));
+  assert.notEqual(first, await checkoutRequestFingerprint(parsed({ ...amounts, expectedSubtotalCents: 3124 })));
+  assert.notEqual(first, await checkoutRequestFingerprint(parsed({ ...amounts, expectedShippingCents: 1 })));
+  assert.notEqual(first, await checkoutRequestFingerprint(parsed()));
+  for (const invalid of [
+    { expectedSubtotalCents: 3123 }, { expectedShippingCents: 0 },
+    { ...amounts, expectedSubtotalCents: -1 }, { ...amounts, expectedShippingCents: 1.5 },
+    { ...amounts, expectedShippingCents: Number.MAX_SAFE_INTEGER + 1 },
+  ]) assert.equal(checkoutSchema.safeParse(checkout(invalid)).success, false);
+});

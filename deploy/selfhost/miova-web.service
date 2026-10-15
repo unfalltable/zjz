@@ -11,6 +11,7 @@ Group=miova
 WorkingDirectory=/srv/miova/current
 Environment=NODE_ENV=production
 Environment=MIOVA_RUNTIME=node
+Environment=MIOVA_MEDIA_PATH=/srv/miova/data/media
 Environment=APP_SURFACE=web
 Environment=HOST=127.0.0.1
 Environment=PORT=3100

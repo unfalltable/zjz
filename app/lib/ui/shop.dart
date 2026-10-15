@@ -38,7 +38,7 @@ class StoreShell extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'MIOVA 妙物',
+          '沃米',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -247,6 +247,36 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 }
 
+const _variantCopy = {
+  'choose': {
+    'en': 'Choose options',
+    'zh': '选择规格',
+    'es': 'Elegir opciones',
+  },
+  'from': {'en': 'From', 'zh': '起价', 'es': 'Desde'},
+  'stock': {'en': 'Stock', 'zh': '库存', 'es': 'Existencias'},
+  'unavailable': {
+    'en': 'This option is no longer available. Please choose another option.',
+    'zh': '已选规格已下架，请重新选择规格。',
+    'es': 'Esta opción ya no está disponible. Elige otra opción.',
+  },
+};
+
+String _variantText(String locale, String key) =>
+    _variantCopy[key]?[locale] ?? _variantCopy[key]!['en']!;
+
+String _listingPriceLabel(Product product, String locale) =>
+    product.variants.isEmpty
+    ? money(product.listingPriceCents)
+    : '${_variantText(locale, 'from')} ${money(product.listingPriceCents)}';
+
+String _stockLabel(int inventory, String locale) =>
+    '${_variantText(locale, 'stock')}: $inventory';
+
+String _variantLabel(Product product) => product.variantLabel.isNotEmpty
+    ? product.variantLabel
+    : product.sku ?? product.name;
+
 class ProductCard extends StatelessWidget {
   const ProductCard({super.key, required this.product});
   final Product product;
@@ -254,6 +284,11 @@ class ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final model = StoreScope.of(context), copy = Copy(model.locale);
     final saved = model.favorites.contains(product.id);
+    final hasVariants = product.variants.isNotEmpty;
+    final available = product.listingInventory > 0;
+    final canAdd = hasVariants
+        ? available
+        : (model.bag[product.id] ?? 0) < min(10, product.inventory);
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
@@ -288,12 +323,14 @@ class ProductCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        money(product.priceCents),
+                        _listingPriceLabel(product, model.locale),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(_stockLabel(product.listingInventory, model.locale)),
                     ],
                   ),
                 ),
@@ -306,13 +343,13 @@ class ProductCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed:
-                        model.loading ||
-                            model.error != null ||
-                            (model.bag[product.id] ?? 0) >=
-                                min(10, product.inventory)
+                    onPressed: model.loading || model.error != null || !canAdd
                         ? null
                         : () {
+                            if (hasVariants) {
+                              context.push('/product/${product.id}');
+                              return;
+                            }
                             model.quantity(
                               product.id,
                               (model.bag[product.id] ?? 0) + 1,
@@ -324,7 +361,13 @@ class ProductCard extends StatelessWidget {
                               ),
                             );
                           },
-                    child: Text(copy.t(product.inventory > 0 ? 'add' : 'sold')),
+                    child: Text(
+                      !available
+                          ? copy.t('sold')
+                          : hasVariants
+                          ? _variantText(model.locale, 'choose')
+                          : copy.t('add'),
+                    ),
                   ),
                 ),
                 IconButton(
@@ -365,17 +408,65 @@ class ProductImage extends StatelessWidget {
   );
 }
 
-class ProductScreen extends StatelessWidget {
+Product? _listingForSku(StoreModel model, String id) {
+  final product = model.product(id);
+  if (product != null) return product;
+  for (final listing in model.catalog?.products ?? <Product>[]) {
+    if (listing.saleVariants.any((variant) => variant.id == id)) return listing;
+  }
+  return null;
+}
+
+class ProductScreen extends StatefulWidget {
   const ProductScreen({super.key, required this.id});
   final String id;
   @override
+  State<ProductScreen> createState() => _ProductScreenState();
+}
+
+class _ProductScreenState extends State<ProductScreen> {
+  String? _listingId, _selectedSkuId;
+  bool _selectionInitialized = false;
+
+  @override
+  void didUpdateWidget(covariant ProductScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id) {
+      _listingId = null;
+      _selectedSkuId = null;
+      _selectionInitialized = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final model = StoreScope.of(context),
-        copy = Copy(model.locale),
-        product = model.product(id);
+    final model = StoreScope.of(context), copy = Copy(model.locale);
+    final product = _listingId == null
+        ? _listingForSku(model, widget.id)
+        : model.product(_listingId!);
+    if (product != null && !_selectionInitialized) {
+      _listingId = product.id;
+      _selectedSkuId = product.variants.isEmpty || widget.id != product.id
+          ? widget.id
+          : null;
+      _selectionInitialized = true;
+    }
+    Product? selected;
+    if (product != null) {
+      for (final variant in product.saleVariants) {
+        if (variant.id == _selectedSkuId) {
+          selected = variant;
+          break;
+        }
+      }
+    }
+    final selectedSku = selected;
+    final selectionUnavailable = _selectedSkuId != null && selectedSku == null;
+    final showOptions = product != null &&
+        (product.variants.isNotEmpty || selectedSku == null);
     return Scaffold(
       appBar: AppBar(
-        title: Text(product?.name ?? 'MIOVA'),
+        title: Text(product?.name ?? '沃米'),
         leading: IconButton(
           tooltip: copy.t('back'),
           icon: const Icon(Icons.arrow_back),
@@ -396,7 +487,10 @@ class ProductScreen extends StatelessWidget {
                 children: [
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 400),
-                    child: ProductImage(product: product, model: model),
+                    child: ProductImage(
+                      product: selectedSku ?? product,
+                      model: model,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
@@ -405,21 +499,83 @@ class ProductScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    money(product.priceCents),
+                    selectedSku == null
+                        ? _listingPriceLabel(product, model.locale)
+                        : money(selectedSku.priceCents),
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _stockLabel(
+                      selectedSku?.inventory ?? product.listingInventory,
+                      model.locale,
+                    ),
+                  ),
+                  if (selectedSku != null &&
+                      selectedSku.variantAttributes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(selectedSku.variantLabel),
+                  ],
+                  if (showOptions) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      _variantText(model.locale, 'choose'),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: product.saleVariants.map((variant) {
+                        final stock = variant.inventory > 0
+                            ? _stockLabel(variant.inventory, model.locale)
+                            : copy.t('sold');
+                        return ChoiceChip(
+                          key: ValueKey('variant-${variant.id}'),
+                          label: Text(
+                            '${_variantLabel(variant)} · '
+                            '${money(variant.priceCents)} · $stock',
+                          ),
+                          selected: selectedSku?.id == variant.id,
+                          onSelected: (_) =>
+                              setState(() => _selectedSkuId = variant.id),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  if (selectionUnavailable) ...[
+                    const SizedBox(height: 16),
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(_variantText(model.locale, 'unavailable')),
+                    ),
+                  ],
                   const SizedBox(height: 16),
-                  Text(product.text(product.detail, model.locale)),
+                  Text(
+                    (selectedSku ?? product).text(
+                      (selectedSku ?? product).detail,
+                      model.locale,
+                    ),
+                  ),
                   const SizedBox(height: 32),
                   FilledButton(
-                    onPressed:
-                        (model.bag[id] ?? 0) >= min(10, product.inventory)
+                    key: const ValueKey('product-add'),
+                    onPressed: selectedSku == null ||
+                            (model.bag[selectedSku.id] ?? 0) >=
+                                min(10, selectedSku.inventory)
                         ? null
                         : () {
-                            model.quantity(id, (model.bag[id] ?? 0) + 1);
+                            model.quantity(
+                              selectedSku.id,
+                              (model.bag[selectedSku.id] ?? 0) + 1,
+                            );
                             context.go('/bag');
                           },
-                    child: Text(copy.t(product.inventory > 0 ? 'add' : 'sold')),
+                    child: Text(
+                      selectedSku == null
+                          ? _variantText(model.locale, 'choose')
+                          : copy.t(selectedSku.inventory > 0 ? 'add' : 'sold'),
+                    ),
                   ),
                 ],
               ),
@@ -542,7 +698,10 @@ class BagScreen extends StatelessWidget {
     if (model.catalog == null || model.error != null) {
       return CatalogUnavailable(copy: copy, retry: model.reload);
     }
-    if (model.count == 0) {
+    final entries = model.bag.entries
+        .where((entry) => entry.value > 0 && model.sku(entry.key) != null)
+        .toList();
+    if (entries.isEmpty) {
       return SingleChildScrollView(child: EmptyFinds(copy: copy));
     }
     return ListView(
@@ -550,8 +709,9 @@ class BagScreen extends StatelessWidget {
       children: [
         Text(copy.t('bag'), style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 24),
-        ...model.bag.entries.map((entry) {
-          final product = model.product(entry.key)!;
+        ...entries.map((entry) {
+          final product = model.sku(entry.key);
+          if (product == null) return const SizedBox.shrink();
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -562,6 +722,10 @@ class BagScreen extends StatelessWidget {
                     product.name,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  if (product.variantAttributes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(product.variantLabel),
+                  ],
                   const SizedBox(height: 8),
                   Text(money(product.priceCents * entry.value)),
                   Wrap(

@@ -1,7 +1,8 @@
-import type { StoreLocale, StoreProduct } from "@shared/catalog";
+import { MAX_BAG_LINES, type StoreLocale, type StoreProduct } from "../../shared/catalog.ts";
 import type { CatalogQuery } from "@shared/catalog-query";
 import { isProductImage } from "../../shared/assets.ts";
 import { isStorefrontProductId } from "../../shared/product-id.ts";
+import { variantAttributesSchema } from "../../shared/variants.ts";
 
 export const LOCALE_STORAGE_KEY = "miova_locale_v1";
 export const CHECKOUT_RETRY_STORAGE_KEY = "miova_checkout_retry_v1";
@@ -64,19 +65,42 @@ export function productQuantityLimit(product: StoreProduct): number {
 
 export function reconcileShoppingBag(bag: ShoppingBag, products: StoreProduct[]): ShoppingBag {
   const reconciled: ShoppingBag = {};
-  for (const product of products) {
+  for (const product of flattenCatalogProducts(products)) {
     const quantity = Math.min(bag[product.id] ?? 0, productQuantityLimit(product));
     if (quantity > 0) reconciled[product.id] = quantity;
   }
   return reconciled;
 }
 
+export function canAddShoppingBagLine(bag: ShoppingBag, id: string): boolean {
+  return (Object.hasOwn(bag, id) && bag[id] > 0) || Object.values(bag).filter((quantity) => quantity > 0).length < MAX_BAG_LINES;
+}
+
 export function shoppingBagNeedsReview(bag: ShoppingBag, products: StoreProduct[]): boolean {
-  const current = new Map(products.map((product) => [product.id, product]));
+  if (Object.values(bag).filter((quantity) => quantity > 0).length > MAX_BAG_LINES) return true;
+  const current = new Map(flattenCatalogProducts(products).map((product) => [product.id, product]));
   return Object.entries(bag).some(([id, quantity]) => {
     const product = current.get(id);
     return !product || quantity > productQuantityLimit(product);
   });
+}
+
+/** Catalogue listings are groups; bags always contain actual, independently stocked SKUs. */
+export function flattenCatalogProducts(products: StoreProduct[]): StoreProduct[] {
+  return products.flatMap((product) => product.variants?.length ? product.variants : [product]);
+}
+/** Defaults choose an available SKU; an explicit choice is never silently replaced. */
+export function selectProductVariant(listing: StoreProduct, selectedId?: string | null): StoreProduct | null {
+  const variants = listing.variants?.length ? listing.variants : [listing];
+  if (selectedId != null) return variants.find((variant) => variant.id === selectedId) ?? null;
+  return variants.find((variant) => variant.inventory > 0) ?? variants[0];
+}
+export function listingInventory(product: StoreProduct): number {
+  return product.variants?.reduce((sum, variant) => sum + variant.inventory, 0) ?? product.inventory;
+}
+export function listingPriceCents(product: StoreProduct): number {
+  return product.variants?.length ? Math.min(...product.variants.map((variant) => variant.priceCents ?? Math.round(variant.price * 100)))
+    : product.priceCents ?? Math.round(product.price * 100);
 }
 
 function isLocalizedText(value: unknown): value is Record<StoreLocale, string> {
@@ -94,11 +118,13 @@ export function parseCatalogResponse(value: unknown): StoreProduct[] {
   const payload = value as { ok?: unknown; products?: unknown };
   if (payload.ok !== true || !Array.isArray(payload.products)) throw new Error("catalog_invalid");
   const seen = new Set<string>();
-  return payload.products.map((value: unknown) => {
+  const variantIds = new Set<string>();
+  const variantSkus = new Set<string>();
+  const parseProduct = (value: unknown, nested = false): StoreProduct => {
     if (!value || typeof value !== "object") throw new Error("catalog_invalid");
     const product = value as StoreProduct;
     const priceCents = product.priceCents ?? Math.round(product.price * 100);
-    if (!isStorefrontProductId(product.id) || seen.has(product.id) ||
+    if (!isStorefrontProductId(product.id) || (!nested && seen.has(product.id)) ||
         typeof product.name !== "string" || typeof product.sku !== "string" ||
         !Number.isSafeInteger(priceCents) || priceCents < 0 ||
         !Number.isSafeInteger(product.inventory) || product.inventory < 0 ||
@@ -106,12 +132,34 @@ export function parseCatalogResponse(value: unknown): StoreProduct[] {
         !["home", "tech", "wear"].includes(product.category) ||
         !["blue", "ice", "coral"].includes(product.color) ||
         !["marketplace", "self", "supplier"].includes(product.fulfillmentMode) ||
-        !isLocalizedText(product.badge) || !isLocalizedText(product.description) || !isLocalizedText(product.detail)) {
+        !isLocalizedText(product.badge) || !isLocalizedText(product.description) || !isLocalizedText(product.detail) ||
+        (product.listingId !== undefined && !isStorefrontProductId(product.listingId)) ||
+        (product.shippingWeightGrams !== undefined && (!Number.isSafeInteger(product.shippingWeightGrams) || product.shippingWeightGrams < 1 || product.shippingWeightGrams > 1_000_000)) ||
+        (product.images !== undefined && (!Array.isArray(product.images) || product.images.length > 8 || product.images.some((image) => !isSafeProductImage(image)))) ||
+        (product.variantAttributes !== undefined && !variantAttributesSchema.safeParse(product.variantAttributes).success) ||
+        (nested && product.variants !== undefined)) {
       throw new Error("catalog_invalid");
     }
-    seen.add(product.id);
-    return { ...product, price: priceCents / 100, priceCents };
-  });
+    if (!nested) seen.add(product.id);
+    const result = { ...product, price: priceCents / 100, priceCents };
+    if (product.variants !== undefined) {
+      if (!Array.isArray(product.variants) || !product.variants.length || product.variants.length > 100) throw new Error("catalog_invalid");
+      result.variants = product.variants.map((variant) => parseProduct(variant, true));
+      if (result.variants.some((variant) => variant.listingId !== product.id)) throw new Error("catalog_invalid");
+      const root = result.variants.find((variant) => variant.id === product.id);
+      if (!root || root.sku !== product.sku || root.priceCents !== priceCents || root.inventory !== product.inventory) throw new Error("catalog_invalid");
+      result.variantInventory = result.variants.reduce((sum, variant) => sum + variant.inventory, 0);
+      const prices = result.variants.map((variant) => variant.priceCents!);
+      result.priceRangeCents = { min: Math.min(...prices), max: Math.max(...prices) };
+    }
+    return result;
+  };
+  const products = payload.products.map((product) => parseProduct(product));
+  for (const variant of flattenCatalogProducts(products)) {
+    if (variantIds.has(variant.id) || variantSkus.has(variant.sku)) throw new Error("catalog_invalid");
+    variantIds.add(variant.id); variantSkus.add(variant.sku);
+  }
+  return products;
 }
 
 /** Return a complete result set, never a partial page that could erase bag items. */
@@ -124,6 +172,8 @@ export async function fetchLiveCatalog(signal?: AbortSignal, query: Partial<Omit
   try {
     const products: StoreProduct[] = [];
     const ids = new Set<string>();
+    const skuIds = new Set<string>();
+    const skus = new Set<string>();
     const cursors = new Set<string>();
     let cursor: string | null = null;
     let paginated = false;
@@ -144,6 +194,11 @@ export async function fetchLiveCatalog(signal?: AbortSignal, query: Partial<Omit
         if (ids.has(item.id)) throw new Error("catalog_invalid");
         ids.add(item.id);
         products.push(item);
+      }
+      for (const item of flattenCatalogProducts(items)) {
+        if (skuIds.has(item.id) || skus.has(item.sku)) throw new Error("catalog_invalid");
+        skuIds.add(item.id);
+        skus.add(item.sku);
       }
       const metadata = (payload as { pageInfo?: unknown }).pageInfo;
       if (metadata === undefined) {

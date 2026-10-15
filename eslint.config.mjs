@@ -13,9 +13,24 @@ const eslintConfig = defineConfig([
     "build/**",
     "app/**",
     "web/dist/**",
+    // Flutter preview output is generated JavaScript, not application source.
+    "web/public/app-preview/**",
+    "**/dist-node/**",
+    "**/dist/**",
+    "**/.sites-runtime/**",
+    "**/.next/**",
+    "**/.vinext/**",
+    "**/.wrangler/**",
     "backend/backend_web/dist/**",
     "next-env.d.ts",
   ]),
+  {
+    files: ["backend/api/user_account/**/*.{js,cjs}"],
+    rules: {
+      // This independent service uses CommonJS; keep its other checks enabled.
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
   {
     files: ["web/components/ui/**/*.{ts,tsx}", "web/hooks/use-mobile.ts"],
     rules: {

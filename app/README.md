@@ -1,4 +1,4 @@
-# MIOVA 妙物 · Flutter App
+# 沃米 · Flutter App
 
 Flutter 客户端与 Web 商城分开，服务端共享。支持平台工程入口：Android、iOS、Windows、macOS、Linux、Web；工程入口不等于各平台已完成原生构建/上架。
 

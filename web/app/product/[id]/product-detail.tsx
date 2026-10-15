@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Globe2, ShoppingBag } from "lucide-react";
-import Image from "@/components/product-image";
+import { ProductGallery, ProductVariantSelector, productOptionCopy } from "@/components/product-options";
 import { Button } from "@/components/ui/button";
 import { CART_STORAGE_KEY, type StoreLocale, type StoreProduct } from "@shared/catalog";
 import { useStoreLocale } from "@/hooks/use-storefront";
 import { commerceCopy } from "@/lib/commerce-copy";
-import { fetchLiveCatalog, parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, writeBrowserValue } from "@/lib/storefront";
+import { canAddShoppingBagLine, fetchLiveCatalog, flattenCatalogProducts, parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, selectProductVariant, writeBrowserValue } from "@/lib/storefront";
+import { variantLabel } from "@shared/variants";
 
 const labels = {
   en: { add: "Add to bag", added: "Added to bag", sold: "Currently unavailable", limited: "Your bag has the available quantity (up to 10 per item).", about: "About this product", bag: "Review your bag", sku: "Product code" },
@@ -20,7 +21,12 @@ export function ProductDetail({ product: initialProduct }: { product: StoreProdu
   const router = useRouter();
   const [locale, setLocale] = useStoreLocale();
   const t = commerceCopy(locale), label = labels[locale];
-  const [product, setProduct] = useState(initialProduct);
+  const [listing, setListing] = useState(initialProduct);
+  const [selectedId, setSelectedId] = useState(() =>
+    initialProduct.listingId && initialProduct.listingId !== initialProduct.id
+      ? initialProduct.id : selectProductVariant(initialProduct)!.id);
+  const selectedProduct = selectProductVariant(listing, selectedId);
+  const product = selectedProduct ?? listing;
   const [cart, setCart] = useState<Record<string, number>>({});
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -31,17 +37,20 @@ export function ProductDetail({ product: initialProduct }: { product: StoreProdu
   }, []);
   const bagCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
   const add = async () => {
-    if (pending) return;
+    if (pending || !selectedProduct) return;
     setPending(true);
     setNotice(null);
     try {
       const catalog = await fetchLiveCatalog();
-      const current = catalog.find((item) => item.id === product.id);
-      if (!current || !current.inventory) { setProduct((value) => ({ ...value, inventory: 0 })); setNotice(label.sold); return; }
-      setProduct(current);
+      const currentListing = catalog.find((item) => item.id === (listing.listingId ?? listing.id));
+      const current = flattenCatalogProducts(catalog).find((item) => item.id === product.id);
+      if (currentListing) setListing(currentListing);
+      else setListing((value) => ({ ...value, inventory: 0, variants: undefined }));
+      if (!current || !current.inventory) { setNotice(label.sold); return; }
       if (current.price !== product.price) { setNotice(t.priceChanged); return; }
       const raw = readBrowserValue(CART_STORAGE_KEY);
       const currentCart = reconcileShoppingBag(raw ? parseShoppingBag(raw).bag : cart, catalog);
+      if (!canAddShoppingBagLine(currentCart, product.id)) { setNotice(productOptionCopy[locale].bagFull); return; }
       if ((currentCart[product.id] ?? 0) >= productQuantityLimit(current)) { setNotice(label.limited); return; }
       const next = { ...currentCart, [product.id]: (currentCart[product.id] ?? 0) + 1 };
       setCart(next);
@@ -54,6 +63,6 @@ export function ProductDetail({ product: initialProduct }: { product: StoreProdu
 
   return <main className="site-shell store-shell product-page">
     <header className="store-header product-header"><a className="brand store-brand" href="/" aria-label="MIOVA 妙物"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA 妙物</span></a><label className="track-language"><Globe2 aria-hidden="true" /><span className="sr-only">{t.language}</span><select value={locale} onChange={(event) => setLocale(event.target.value as StoreLocale)} aria-label={t.language}><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></label></header>
-    <div className="product-page-content"><a href="/#products" className="checkout-back"><ArrowLeft aria-hidden="true" />{t.backStore}</a><div className="product-page-grid"><div className={`product-page-media store-product-${product.color}`}><Image src={product.image} alt={product.name} width={1000} height={1000} priority /></div><section className="product-page-copy" aria-labelledby="product-title"><p>{product.badge[locale]}</p><h1 id="product-title">{product.name}</h1><p>{product.description[locale]}</p><div className="store-detail-price"><strong>${product.price.toFixed(2)} USD</strong>{product.compareAt !== null && <del>${product.compareAt.toFixed(2)}</del>}</div><p>{label.sku}: {product.sku}</p><p>{t.inventory}: {product.inventory} · {t.limit}</p><div className="product-page-actions"><Button onClick={add} disabled={pending || !product.inventory || (cart[product.id] ?? 0) >= productQuantityLimit(product)}><ShoppingBag aria-hidden="true" />{pending ? t.loading : product.inventory ? label.add : label.sold}</Button><Button variant="outline" onClick={() => router.push("/checkout")} disabled={!bagCount || storageUnavailable}>{label.bag} ({bagCount})</Button></div>{notice && <p className="store-bag-notice" role="status">{notice}</p>}<p className="product-page-draft-note">{t.paused}</p><p>{t.dutyNote}</p></section></div><section className="product-page-description" aria-labelledby="product-description"><h2 id="product-description">{label.about}</h2><p>{product.detail[locale]}</p></section></div>
+    <div className="product-page-content"><a href="/#products" className="checkout-back"><ArrowLeft aria-hidden="true" />{t.backStore}</a><div className="product-page-grid"><ProductGallery key={product.id} product={product} locale={locale} /><section className="product-page-copy" aria-labelledby="product-title"><p>{product.badge[locale]}</p><h1 id="product-title">{product.name}</h1><p>{product.description[locale]}</p><ProductVariantSelector listing={listing} selectedId={selectedId} locale={locale} disabled={pending} onChange={(id) => { setSelectedId(id); setNotice(null); }} />{!selectedProduct && <p className="store-bag-notice" role="status">{productOptionCopy[locale].unavailable}</p>}{selectedProduct && <><div className="store-detail-price"><strong>${product.price.toFixed(2)} USD</strong>{product.compareAt !== null && <del>${product.compareAt.toFixed(2)}</del>}</div><p>{variantLabel(product.variantAttributes)}</p><p>{label.sku}: {product.sku}</p><p>{t.inventory}: {product.inventory} · {t.limit}</p></>}<div className="product-page-actions"><Button onClick={add} disabled={pending || !selectedProduct || !product.inventory || (cart[product.id] ?? 0) >= productQuantityLimit(product)}><ShoppingBag aria-hidden="true" />{pending ? t.loading : selectedProduct?.inventory ? label.add : label.sold}</Button><Button variant="outline" onClick={() => router.push("/checkout")} disabled={!bagCount || storageUnavailable}>{label.bag} ({bagCount})</Button></div>{notice && <p className="store-bag-notice" role="status">{notice}</p>}<p className="product-page-draft-note">{t.paused}</p><p>{t.dutyNote}</p></section></div><section className="product-page-description" aria-labelledby="product-description"><h2 id="product-description">{label.about}</h2><p>{product.detail[locale]}</p></section></div>
   </main>;
 }

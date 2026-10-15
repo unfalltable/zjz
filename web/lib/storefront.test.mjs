@@ -5,6 +5,7 @@ import {
   CHECKOUT_RETRY_STORAGE_KEY, clearCheckoutRetry, fetchLiveCatalog, parseCatalogResponse,
   parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, isSafeProductImage,
   retryKeyFor, shoppingBagNeedsReview, writeBrowserValue, markCheckoutAttempted, wasCheckoutAttempted,
+  selectProductVariant, flattenCatalogProducts, canAddShoppingBagLine,
 } from "./storefront.ts";
 
 const product = {
@@ -120,7 +121,7 @@ test("catalogue reads every page before validating a bag item beyond the first 5
       requests.push(url);
       const last = String(url).includes("cursor=page-two");
       return { ok: true, json: async () => ({ ok: true,
-        products: last ? [{ ...product, id: "item-501" }] : Array.from({ length: 500 }, (_, index) => ({ ...product, id: `item-${index + 1}` })),
+        products: last ? [{ ...product, id: "item-501", sku: "SKU-501" }] : Array.from({ length: 500 }, (_, index) => ({ ...product, id: `item-${index + 1}`, sku: `SKU-${index + 1}` })),
         pageInfo: last ? { hasMore: false, nextCursor: null } : { hasMore: true, nextCursor: "page-two" },
       }) };
     };
@@ -163,4 +164,57 @@ test("malformed pagination, repeated cursors and cross-page duplicate products f
       await assert.rejects(fetchLiveCatalog(), /catalog_invalid/);
     }
   } finally { globalThis.fetch = originalFetch; }
+});
+
+function variantListing(id = "group", childId = "child", childSku = "CHILD-1") {
+  const root = { ...product, id, sku: `ROOT-${id}`, listingId: id, inventory: 0, variantAttributes: { Color: "Blue" } };
+  const child = { ...product, id: childId, sku: childSku, listingId: id, variantAttributes: { Color: "Red" } };
+  return { ...root, variants: [root, child] };
+}
+
+test("default selection uses an actual available SKU; exact sold-out links stay selected", () => {
+  const listing = variantListing();
+  assert.equal(selectProductVariant(listing)?.id, "child");
+  assert.equal(selectProductVariant(listing, "group")?.id, "group");
+  assert.equal(selectProductVariant(listing, "removed"), null);
+  assert.equal(selectProductVariant(product)?.id, product.id);
+  assert.equal(selectProductVariant(product, "removed"), null);
+  const soldOut = { ...listing, variants: listing.variants.map((variant) => ({ ...variant, inventory: 0 })) };
+  assert.equal(selectProductVariant(soldOut)?.id, "group");
+});
+
+test("variant bags retain independent prices, stock limits and unavailable choices", () => {
+  const listing = parseCatalogResponse({ ok: true, products: [variantListing()] })[0];
+  assert.deepEqual(flattenCatalogProducts([listing]).map((variant) => variant.id), ["group", "child"]);
+  assert.deepEqual(reconcileShoppingBag({ group: 1, child: 3 }, [listing]), { child: 2 });
+  assert.equal(shoppingBagNeedsReview({ child: 2 }, [listing]), false);
+  assert.equal(shoppingBagNeedsReview({ group: 1 }, [listing]), true);
+  assert.equal(shoppingBagNeedsReview({ child: 3 }, [listing]), true);
+});
+
+test("catalogue rejects cross-page repeated variant IDs and merchant SKUs", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const duplicate of ["id", "sku"]) {
+      let page = 0;
+      const first = variantListing("first", "first-child", "FIRST-CHILD");
+      const second = variantListing("second", duplicate === "id" ? "first-child" : "second-child",
+        duplicate === "sku" ? "FIRST-CHILD" : "SECOND-CHILD");
+      globalThis.fetch = async () => ({ ok: true, json: async () => ++page === 1
+        ? { ok: true, products: [first], pageInfo: { hasMore: true, nextCursor: "next" } }
+        : { ok: true, products: [second], pageInfo: { hasMore: false, nextCursor: null } } });
+      await assert.rejects(fetchLiveCatalog(), /catalog_invalid/);
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("twenty distinct bag lines are allowed, while another SKU requires removing a line", () => {
+  const bag = Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`item-${index}`, 1]));
+  const catalog = Object.keys(bag).map((id) => ({ ...product, id, sku: id }));
+  assert.equal(canAddShoppingBagLine(bag, "new-item"), false);
+  assert.equal(canAddShoppingBagLine(bag, "item-0"), true);
+  assert.equal(shoppingBagNeedsReview(bag, catalog), false);
+  assert.equal(shoppingBagNeedsReview({ ...bag, extra: 1 }, [...catalog, { ...product, id: "extra", sku: "extra" }]), true);
+  delete bag["item-0"];
+  assert.equal(canAddShoppingBagLine(bag, "new-item"), true);
 });

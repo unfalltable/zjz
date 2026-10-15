@@ -1,11 +1,11 @@
 {
-    "name": "MIOVA 妙物",
-    "short_name": "MIOVA",
+    "name": "沃米",
+    "short_name": "沃米",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#3847e7",
-    "description": "MIOVA 妙物 multi-platform shopping client.",
+    "description": "沃米 multi-platform shopping client.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

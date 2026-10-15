@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+import 'shipping.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message);
@@ -59,6 +60,7 @@ class CommerceApi {
     );
     final products = <Product>[];
     final productIds = <String>{};
+    final skuIds = <String>{};
     final cursors = <String>{};
     Catalog? firstPage;
     var path = '/api/v1/catalog';
@@ -75,6 +77,11 @@ class CommerceApi {
         for (final product in page.products) {
           if (product.id.trim().isEmpty || !productIds.add(product.id)) {
             throw incomplete;
+          }
+          for (final variant in product.saleVariants) {
+            if (variant.id.trim().isEmpty || !skuIds.add(variant.id)) {
+              throw incomplete;
+            }
           }
           products.add(product);
         }
@@ -117,6 +124,24 @@ class CommerceApi {
       rethrow;
     } catch (_) {
       throw incomplete;
+    }
+  }
+
+  Future<ShippingQuotes> shippingQuotes(
+    String country,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final path = Uri(
+      path: '/api/v1/shipping',
+      queryParameters: {'country': country, 'items': jsonEncode(items)},
+    ).toString();
+    final json = await _request(path);
+    try {
+      return ShippingQuotes.fromJson(json, country: country);
+    } catch (_) {
+      throw const ApiException(
+        'Shipping quotes are incomplete. Please try again.',
+      );
     }
   }
 

@@ -2,9 +2,10 @@ import { z } from "zod";
 import { products as importTemplates, type StoreProduct } from "@shared/catalog";
 import { isProductImage } from "@shared/assets";
 import { isStorefrontProductId } from "@shared/product-id";
+import { readVariantAttributes, readVariantImages, variantLabel } from "@shared/variants";
 import type { FulfillmentMode, OpsProduct } from "@shared/ops-types";
 import { availableInventory, commerceFulfillmentModes, isValidPriceCents } from "@backend/domain/commerce";
-import { CatalogQueryError, normalizeCatalogQuery, type CatalogPage, type CatalogQuery, type NormalizedCatalogQuery } from "@shared/catalog-query";
+import { CatalogQueryError, normalizeCatalogQuery, normalizeCatalogSearchText, type CatalogPage, type CatalogQuery, type NormalizedCatalogQuery } from "@shared/catalog-query";
 import { getD1 } from "./index";
 
 const categorySchema = z.enum(["home", "tech", "wear"]);
@@ -12,6 +13,7 @@ const imageSchema = z.string().trim().min(1).max(2048).refine(isProductImage, "U
 const localized = z.object({ en: z.string().max(5000), zh: z.string().max(5000), es: z.string().max(5000) });
 const metadataSchema = z.object({
   color: z.enum(["blue", "ice", "coral"]), badge: localized, description: localized, detail: localized,
+  images: z.array(imageSchema).max(8).optional(),
 });
 const editableProductSchema = z.object({
   priceCents: z.number().int().min(1).max(100_000_000),
@@ -37,17 +39,19 @@ export type NewCatalogProduct = z.infer<typeof newProductSchema>;
 const catalogAuditSql = `INSERT INTO catalog_events (id, owner_id, product_id, action, details_json, actor_id, created_at)
   SELECT ?, owner_id, id, ?, ?, ?, ? FROM products WHERE id = ? AND owner_id = ? AND changes() > 0`;
 
-type CatalogRow = {
+export type CatalogRow = {
   id: string; sku: string; name: string; stock: number; reserved: number; inbound: number;
   defaultFulfillment: FulfillmentMode; status: "active" | "paused"; updatedAt: string;
   storefrontId: string | null; priceCents: number | null; compareAtCents: number | null;
   category: string | null; image: string | null; metadataJson: string | null; version: number;
   shippingWeightGrams: number;
+  productGroupId: string | null; variantAttributesJson: string | null;
 };
-const selectProductColumns = `id, sku, name, stock, reserved, inbound,
+export const selectProductColumns = `id, sku, name, stock, reserved, inbound,
   default_fulfillment AS defaultFulfillment, status, updated_at AS updatedAt,
   storefront_id AS storefrontId, price_cents AS priceCents, compare_at_cents AS compareAtCents,
-  category, image, metadata_json AS metadataJson, version, shipping_weight_grams AS shippingWeightGrams`;
+  category, image, metadata_json AS metadataJson, version, shipping_weight_grams AS shippingWeightGrams,
+  product_group_id AS productGroupId, variant_attributes_json AS variantAttributesJson`;
 
 export async function getStorefrontProducts(ownerId: string): Promise<StoreProduct[]> {
   // Compatibility for server callers that explicitly need a complete catalogue.
@@ -66,7 +70,60 @@ export async function getStorefrontProduct(ownerId: string, storefrontId: string
   const row = await getD1().prepare(`SELECT ${selectProductColumns} FROM products
     WHERE owner_id = ? AND storefront_id = ? AND status = 'active' LIMIT 1`)
     .bind(ownerId, storefrontId).first<CatalogRow>();
-  return row ? toStoreProduct(row) : null;
+  if (!row) return null;
+  if (row.productGroupId) {
+    const root = await getD1().prepare(`SELECT ${selectProductColumns} FROM products
+      WHERE owner_id = ? AND id = ? AND product_group_id IS NULL AND status = 'active' LIMIT 1`)
+      .bind(ownerId, row.productGroupId).first<CatalogRow>();
+    if (!root || !toStoreProduct(root)) return null;
+    return toStoreProduct({ ...row, name: root.name, category: root.category,
+      image: row.image ?? root.image, metadataJson: root.metadataJson }, root.storefrontId!,
+      readVariantImages(row.metadataJson) ?? (row.image ? [] : null));
+  }
+  return toStoreProduct(row);
+}
+
+/** Group details are separate from bounded, authoritative checkout SKU reads. */
+export async function getStorefrontProductDetail(ownerId: string, storefrontId: string): Promise<StoreProduct | null> {
+  const product = await getStorefrontProduct(ownerId, storefrontId);
+  if (!product) return null;
+  const rows = await getD1().prepare(`SELECT ${selectProductColumns} FROM products
+    WHERE owner_id = ? AND storefront_id = ? AND product_group_id IS NULL AND status = 'active' LIMIT 1`)
+    .bind(ownerId, product.listingId ?? product.id).first<CatalogRow>();
+  if (!rows) return null;
+  const listing = (await attachStorefrontVariants(ownerId, [rows]))[0];
+  if (!listing) return null;
+  // A deep link to a child starts on that SKU, while the canonical listing is the root.
+  return product.id === listing.id ? listing : { ...product, variants: listing.variants,
+    priceRangeCents: listing.priceRangeCents, variantInventory: listing.variantInventory };
+}
+
+async function attachStorefrontVariants(ownerId: string, roots: CatalogRow[]): Promise<StoreProduct[]> {
+  if (!roots.length) return [];
+  const children: CatalogRow[] = [];
+  // D1 allows 100 bound parameters; reserve one for the owner even at limit=100.
+  for (let start = 0; start < roots.length; start += 99) {
+    const ids = roots.slice(start, start + 99).map((row) => row.id);
+    const page = await getD1().prepare(`SELECT ${selectProductColumns} FROM products
+      WHERE owner_id = ? AND product_group_id IN (${ids.map(() => "?").join(",")}) AND status = 'active'
+      ORDER BY sku ASC`).bind(ownerId, ...ids).all<CatalogRow>();
+    children.push(...page.results);
+  }
+  return roots.flatMap((root) => {
+    const product = toStoreProduct(root);
+    if (!product) return [];
+    const members = children.filter((row) => row.productGroupId === root.id);
+    if (!members.length && !Object.keys(product.variantAttributes ?? {}).length) return [product];
+    const variants = [product, ...members.flatMap((row) => {
+      const child = toStoreProduct({ ...row, name: root.name, category: root.category,
+        image: row.image ?? root.image, metadataJson: root.metadataJson }, root.storefrontId!,
+        readVariantImages(row.metadataJson) ?? (row.image ? [] : null));
+      return child ? [child] : [];
+    })];
+    const cents = variants.map((variant) => variant.priceCents!);
+    return [{ ...product, variants, priceRangeCents: { min: Math.min(...cents), max: Math.max(...cents) },
+      variantInventory: variants.reduce((sum, variant) => sum + variant.inventory, 0) }];
+  });
 }
 
 type CatalogPosition = { key: string | number; id: string };
@@ -98,9 +155,29 @@ function decodePosition(cursor: string, fingerprint: string, sort: NormalizedCat
   } catch { throw new CatalogQueryError("The catalogue cursor is invalid or belongs to a different search."); }
 }
 
+function variantSearchSql(table: "products" | "variant"): string {
+  // Decode escaped Unicode and use the same visible "dimension: value" label as Web.
+  // Invalid legacy JSON remains a candidate only; validated public products decide matches.
+  return `COALESCE((SELECT GROUP_CONCAT(trim(attribute.key) || ': ' || trim(attribute.value), ' / ')
+    FROM json_each(CASE WHEN json_valid(${table}.variant_attributes_json)
+      THEN ${table}.variant_attributes_json ELSE '{}' END) AS attribute WHERE attribute.type = 'text'), '')`;
+}
+
+function matchesCatalogSearch(product: StoreProduct, tokens: string[], locale: NormalizedCatalogQuery["locale"]): boolean {
+  const text = normalizeCatalogSearchText([
+    product.name, product.sku, product.description[locale], product.detail[locale],
+    variantLabel(product.variantAttributes),
+    ...(product.variants ?? []).flatMap((variant) => [variant.sku, variantLabel(variant.variantAttributes)]),
+  ].join(" "));
+  return tokens.every((token) => text.includes(token));
+}
+
 export async function getStorefrontCatalogPage(ownerId: string, input: CatalogQuery = {}): Promise<CatalogPage> {
   const query = normalizeCatalogQuery(input);
   const fingerprint = await queryFingerprint(ownerId, query);
+  const tokens = query.q.split(" ").filter(Boolean);
+  // One literal ASCII token keeps the SQL candidate filter bounded even for many keywords.
+  const asciiToken = tokens.filter((token) => /^[\x00-\x7f]+$/.test(token)).sort((a, b) => b.length - a.length)[0];
   let position = query.cursor ? decodePosition(query.cursor, fingerprint, query.sort) : null;
   // These expressions are chosen only from the fixed sort enum, never from request text.
   const sortColumn = query.sort === "featured" ? "name" : "price_cents";
@@ -111,21 +188,26 @@ export async function getStorefrontCatalogPage(ownerId: string, input: CatalogQu
   const scanSize = Math.max(100, query.limit + 1);
   let exhausted = false;
   while (matches.length <= query.limit && !exhausted) {
-    const conditions = ["owner_id = ?", "status = 'active'", "typeof(price_cents) = 'integer'",
+    const conditions = ["owner_id = ?", "status = 'active'", "product_group_id IS NULL", "typeof(price_cents) = 'integer'",
       "price_cents BETWEEN 1 AND 100000000", "storefront_id IS NOT NULL", "category IN ('home', 'tech', 'wear')",
       "image IS NOT NULL", "default_fulfillment IN ('marketplace', 'self', 'supplier')"];
     const values: (string | number)[] = [ownerId];
     if (query.category !== "all") { conditions.push("category = ?"); values.push(query.category); }
-    if (query.q && /^[\x00-\x7f]+$/.test(query.q)) {
-      const pattern = `%${query.q.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
-      // SQLite LIKE folds ASCII only. Unicode queries are matched on the server below.
-      // For ASCII queries, retain non-ASCII text as candidates too (e.g. Kelvin K → k),
-      // so this SQL prefilter cannot discard a Unicode case-fold match.
+    if (asciiToken) {
+      const pattern = `%${asciiToken.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+      // LIKE folds ASCII only. Retain Unicode/control text for the normalized JS check.
       const description = `CASE WHEN json_valid(metadata_json) THEN COALESCE(json_extract(metadata_json, '$.description.${query.locale}'), '') ELSE '' END`;
       const detail = `CASE WHEN json_valid(metadata_json) THEN COALESCE(json_extract(metadata_json, '$.detail.${query.locale}'), '') ELSE '' END`;
+      const attributes = variantSearchSql("products");
+      const childAttributes = variantSearchSql("variant");
       conditions.push(`(name LIKE ? ESCAPE '\\' OR sku LIKE ? ESCAPE '\\' OR ${description} LIKE ? ESCAPE '\\' OR ${detail} LIKE ? ESCAPE '\\'
-        OR name GLOB '*[^ -~]*' OR sku GLOB '*[^ -~]*' OR ${description} GLOB '*[^ -~]*' OR ${detail} GLOB '*[^ -~]*')`);
-      values.push(pattern, pattern, pattern, pattern);
+        OR ${attributes} LIKE ? ESCAPE '\\'
+        OR name GLOB '*[^ -~]*' OR sku GLOB '*[^ -~]*' OR ${description} GLOB '*[^ -~]*' OR ${detail} GLOB '*[^ -~]*' OR ${attributes} GLOB '*[^ -~]*'
+        OR EXISTS (SELECT 1 FROM products AS variant WHERE variant.owner_id = products.owner_id
+          AND variant.product_group_id = products.id AND variant.status = 'active'
+          AND (variant.sku LIKE ? ESCAPE '\\' OR ${childAttributes} LIKE ? ESCAPE '\\'
+            OR variant.sku GLOB '*[^ -~]*' OR ${childAttributes} GLOB '*[^ -~]*')))`);
+      values.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern);
     }
     if (position) {
       conditions.push(`(${sortColumn} ${comparison} ? OR (${sortColumn} = ? AND id > ?))`);
@@ -134,10 +216,13 @@ export async function getStorefrontCatalogPage(ownerId: string, input: CatalogQu
     const rows = await getD1().prepare(`SELECT ${selectProductColumns} FROM products WHERE ${conditions.join(" AND ")}
       ORDER BY ${sortColumn} ${direction}, id ASC LIMIT ?`).bind(...values, scanSize).all<CatalogRow>();
     exhausted = rows.results.length < scanSize;
+    // Search verified, active options only, in bounded batches; return each root once.
+    const listings = tokens.length ? new Map((await attachStorefrontVariants(ownerId, rows.results))
+      .map((product) => [product.id, product])) : null;
     for (const row of rows.results) {
       position = { key: query.sort === "featured" ? row.name : row.priceCents!, id: row.id };
-      const product = toStoreProduct(row);
-      if (!product || (query.q && !`${product.name} ${product.sku} ${product.description[query.locale]} ${product.detail[query.locale]}`.toLowerCase().includes(query.q))) continue;
+      const product = listings ? listings.get(row.storefrontId!) : toStoreProduct(row);
+      if (!product || (tokens.length && !matchesCatalogSearch(product, tokens, query.locale))) continue;
       matches.push({ row, product });
       if (matches.length > query.limit) break;
     }
@@ -146,7 +231,8 @@ export async function getStorefrontCatalogPage(ownerId: string, input: CatalogQu
   const hasMore = matches.length > query.limit;
   const selected = matches.slice(0, query.limit);
   const last = selected.at(-1)?.row;
-  return { products: selected.map(({ product }) => product), pageInfo: {
+  return { products: tokens.length ? selected.map(({ product }) => product)
+    : await attachStorefrontVariants(ownerId, selected.map(({ row }) => row)), pageInfo: {
     hasMore,
     nextCursor: hasMore && last ? encodePosition({ key: query.sort === "featured" ? last.name : last.priceCents!, id: last.id }, fingerprint) : null,
   } };
@@ -155,6 +241,7 @@ export async function getStorefrontCatalogPage(ownerId: string, input: CatalogQu
 export async function getOpsProducts(ownerId: string): Promise<OpsProduct[]> {
   const rows = await getD1().prepare(`SELECT ${selectProductColumns} FROM products
     WHERE owner_id = ? ORDER BY name ASC LIMIT 1000`).bind(ownerId).all<CatalogRow>();
+  const groupSkus = new Map(rows.results.map((row) => [row.id, row.sku]));
   return rows.results.map((row) => ({
     sku: row.sku, name: row.name, stock: row.stock, reserved: row.reserved, inbound: row.inbound,
     defaultFulfillment: row.defaultFulfillment, status: row.status, updatedAt: row.updatedAt,
@@ -164,6 +251,8 @@ export async function getOpsProducts(ownerId: string): Promise<OpsProduct[]> {
     image: row.image, version: row.version,
     metadata: readMetadata(row.metadataJson),
     shippingWeightGrams: row.shippingWeightGrams,
+    productGroupId: row.productGroupId, groupSku: row.productGroupId ? groupSkus.get(row.productGroupId) ?? row.sku : row.sku,
+    variantAttributes: readVariantAttributes(row.variantAttributesJson), isVariant: row.productGroupId !== null,
   }));
 }
 
@@ -230,12 +319,15 @@ export async function updateCatalogProduct(ownerId: string, sku: string, input: 
   }
   const now = new Date().toISOString();
   const db = getD1();
+  const nextMetadata = update.metadata ? { ...update.metadata,
+    ...(update.metadata.images === undefined && readMetadata(current.metadataJson)?.images
+      ? { images: readMetadata(current.metadataJson)!.images } : {}) } : null;
   try {
     const results = await db.batch([db.prepare(`UPDATE products SET price_cents = ?, compare_at_cents = ?, status = ?,
       default_fulfillment = ?, storefront_id = ?, name = ?, category = ?, image = ?, metadata_json = ?, version = version + 1, updated_at = ?, shipping_weight_grams = ?
       WHERE owner_id = ? AND sku = ? AND version = ?`).bind(
       update.priceCents, compareAtCents, update.status, update.defaultFulfillment ?? current.defaultFulfillment,
-      storefrontId, update.name ?? current.name, category, image, update.metadata ? JSON.stringify(update.metadata) : current.metadataJson,
+      storefrontId, update.name ?? current.name, category, image, nextMetadata ? JSON.stringify(nextMetadata) : current.metadataJson,
       now, update.shippingWeightGrams ?? current.shippingWeightGrams, ownerId, sku, current.version,
     ), db.prepare(catalogAuditSql).bind(crypto.randomUUID(), "updated", JSON.stringify({ priceCents: update.priceCents, status: update.status }), ownerId, now, current.id, ownerId)]);
     return (results[0].meta.changes ?? 0) > 0;
@@ -245,7 +337,7 @@ export async function updateCatalogProduct(ownerId: string, sku: string, input: 
   }
 }
 
-function toStoreProduct(row: CatalogRow): StoreProduct | null {
+function toStoreProduct(row: CatalogRow, listingId?: string, galleryImages: string[] | null = null): StoreProduct | null {
   const category = categorySchema.safeParse(row.category);
   if (!isStorefrontProductId(row.storefrontId) || !row.name || row.name.length > 200 || !isValidPriceCents(row.priceCents)
     || !category.success || !imageSchema.safeParse(row.image).success
@@ -262,6 +354,8 @@ function toStoreProduct(row: CatalogRow): StoreProduct | null {
     color: metadata?.color ?? "blue", inventory: availableInventory(row.stock, row.reserved),
     fulfillmentMode: row.defaultFulfillment, inventoryReserved: false,
     shippingWeightGrams: row.shippingWeightGrams,
+    images: Array.from(new Set([row.image!, ...(galleryImages ?? metadata?.images ?? [])])).slice(0, 8),
+    listingId: listingId ?? row.storefrontId, variantAttributes: readVariantAttributes(row.variantAttributesJson),
     badge: metadata?.badge ?? emptyText, description: metadata?.description ?? nameText, detail: metadata?.detail ?? nameText,
   };
 }

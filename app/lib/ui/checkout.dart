@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/models.dart';
+import '../data/shipping.dart';
 import '../l10n/strings.dart';
 import '../state/store_model.dart';
 import 'shop.dart';
@@ -29,26 +33,129 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     ])
       key: TextEditingController(),
   };
-  String _delivery = 'standard';
+  String? _delivery;
+  ShippingQuotes? _quotes;
+  String? _quoteKey;
+  Catalog? _quotedCatalog;
+  bool _quoteEnabled = false, _quoteLoading = false, _quoteFailed = false;
+  int _quoteRequest = 0;
   String? _error;
   bool _saving = false;
   OrderReceipt? _receipt;
-  int _shipping(int subtotal) => _delivery == 'standard'
-      ? (subtotal >= 7500 ? 0 : 890)
-      : (_delivery == 'express' ? 1890 : 3200);
+  List<Map<String, dynamic>> _items(StoreModel model) {
+    final ids = model.bag.keys.toList()..sort();
+    return [
+      for (final id in ids) {'id': id, 'quantity': model.bag[id]!},
+    ];
+  }
+
+  String _fingerprint(StoreModel model) =>
+      jsonEncode({'country': model.destination, 'items': _items(model)});
+
+  bool _canQuote(StoreModel model) =>
+      model.catalog != null &&
+      !model.loading &&
+      model.error == null &&
+      model.count > 0 &&
+      _receipt == null;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final model = StoreScope.of(context);
+    if (_quoteKey != _fingerprint(model) ||
+        !identical(_quotedCatalog, model.catalog) ||
+        _quoteEnabled != _canQuote(model)) {
+      _refreshQuote(model);
+    }
+  }
+
+  // Called during dependency changes, or inside setState for an explicit retry.
+  void _refreshQuote(StoreModel model) {
+    final request = ++_quoteRequest;
+    final preferredMethod = _delivery;
+    _quoteKey = _fingerprint(model);
+    _quotedCatalog = model.catalog;
+    _quoteEnabled = _canQuote(model);
+    _quotes = null;
+    _quoteFailed = false;
+    _quoteLoading = _quoteEnabled;
+    if (_quoteEnabled) {
+      unawaited(
+        _loadQuote(
+          model,
+          request,
+          model.destination,
+          _items(model),
+          preferredMethod,
+        ),
+      );
+    }
+  }
+
+  bool _currentRequest(StoreModel model, int request) =>
+      mounted &&
+      request == _quoteRequest &&
+      _canQuote(model) &&
+      _quoteKey == _fingerprint(model) &&
+      identical(_quotedCatalog, model.catalog);
+
+  Future<void> _loadQuote(
+    StoreModel model,
+    int request,
+    String country,
+    List<Map<String, dynamic>> items,
+    String? preferredMethod,
+  ) async {
+    try {
+      final quotes = await model.api.shippingQuotes(country, items);
+      if (!_currentRequest(model, request)) return;
+      setState(() {
+        _quotes = quotes;
+        final available = quotes.available;
+        _delivery = available.any((route) => route.method == preferredMethod)
+            ? preferredMethod
+            : available.isEmpty
+            ? null
+            : available.first.method;
+        _quoteLoading = false;
+      });
+    } catch (_) {
+      if (!_currentRequest(model, request)) return;
+      setState(() {
+        _quoteFailed = true;
+        _quoteLoading = false;
+      });
+    }
+  }
+
+  ShippingQuote? _selectedQuote(StoreModel model) {
+    if (!_currentRequest(model, _quoteRequest) ||
+        _quoteLoading ||
+        _quoteFailed) {
+      return null;
+    }
+    for (final quote in _quotes?.available ?? <ShippingQuote>[]) {
+      if (quote.method == _delivery) return quote;
+    }
+    return null;
+  }
 
   Future<void> _save(StoreModel model) async {
+    final quote = _selectedQuote(model), quotes = _quotes;
+    if (_saving || quote == null || quotes == null) return;
     if (!_form.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     final input = <String, dynamic>{
       for (final entry in _fields.entries) entry.key: entry.value.text.trim(),
       'destination': model.destination,
-      'deliveryMethod': _delivery,
+      'deliveryMethod': quote.method,
+      'shippingRevision': quotes.revision,
+      'expectedSubtotalCents': quotes.subtotalCents,
+      'expectedShippingCents': quote.shippingCents!,
       'marketingOptIn': false,
       'website': '',
-      'items': model.bag.entries
-          .map((entry) => {'id': entry.key, 'quantity': entry.value})
-          .toList(),
+      'items': _items(model),
     };
     setState(() {
       _saving = true;
@@ -56,12 +163,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
     try {
       input['idempotencyKey'] = await model.checkoutKeyFor(input);
+      // Local persistence may yield while the destination or bag changes.
+      if (!mounted) return;
+      if (!identical(_quotes, quotes) || _selectedQuote(model) != quote) {
+        setState(() => _error = Copy(model.locale).t('shippingChanged'));
+        return;
+      }
       final receipt = await model.api.createOrder(input);
       model.clearBag();
       if (!mounted) return;
       setState(() => _receipt = receipt);
     } catch (exception) {
-      if (mounted) setState(() => _error = exception.toString());
+      if (mounted) {
+        setState(() {
+          _error = exception.toString();
+          _refreshQuote(model);
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -70,6 +188,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final model = StoreScope.of(context), copy = Copy(model.locale);
+    final quote = _selectedQuote(model);
+    final quotes = _currentRequest(model, _quoteRequest) ? _quotes : null;
     if (model.catalog == null || model.error != null || model.loading) {
       return Scaffold(
         appBar: AppBar(title: Text(copy.t('delivery'))),
@@ -161,6 +281,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               (entry) => Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: TextFormField(
+                                  key: ValueKey('checkout-${entry.key}'),
                                   controller: entry.value,
                                   enabled: !_saving,
                                   decoration: InputDecoration(
@@ -189,12 +310,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             .hasMatch(text)) {
                                       return copy.t('required');
                                     }
+                                    if (entry.key == 'phone' &&
+                                        (!RegExp(r'^\+?[0-9\s().-]+$')
+                                                .hasMatch(text) ||
+                                            text
+                                                    .replaceAll(
+                                                      RegExp(r'\D'),
+                                                      '',
+                                                    )
+                                                    .length <
+                                                7)) {
+                                      return copy.t('required');
+                                    }
                                     return null;
                                   },
                                 ),
                               ),
                             ),
                             DropdownButtonFormField<String>(
+                              key: ValueKey(model.destination),
                               initialValue: model.destination,
                               decoration: InputDecoration(
                                 labelText: copy.t('country'),
@@ -218,40 +352,80 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     },
                             ),
                             const SizedBox(height: 24),
-                            DropdownButtonFormField<String>(
-                              initialValue: _delivery,
-                              decoration: InputDecoration(
-                                labelText: copy.t('shipping'),
+                            if (_quoteLoading)
+                              Semantics(
+                                liveRegion: true,
+                                child: Text(copy.t('shippingLoading')),
+                              )
+                            else if (_quoteFailed || quotes == null) ...[
+                              Semantics(
+                                liveRegion: true,
+                                child: Text(copy.t('shippingUnavailable')),
                               ),
-                              items: ['standard', 'express', 'priority']
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(copy.t(value)),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: _saving
-                                  ? null
-                                  : (value) =>
-                                        setState(() => _delivery = value!),
-                            ),
+                              TextButton(
+                                key: const ValueKey('shipping-retry'),
+                                onPressed: _saving
+                                    ? null
+                                    : () =>
+                                          setState(() => _refreshQuote(model)),
+                                child: Text(copy.t('retry')),
+                              ),
+                            ] else if (quotes.available.isEmpty) ...[
+                              Semantics(
+                                liveRegion: true,
+                                child: Text(copy.t('shippingNoRoutes')),
+                              ),
+                              TextButton(
+                                key: const ValueKey('shipping-retry'),
+                                onPressed: _saving
+                                    ? null
+                                    : () =>
+                                          setState(() => _refreshQuote(model)),
+                                child: Text(copy.t('retry')),
+                              ),
+                            ] else
+                              DropdownButtonFormField<String>(
+                                key: ValueKey('shipping-$_quoteRequest'),
+                                initialValue: _delivery,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  labelText: copy.t('shipping'),
+                                ),
+                                items: quotes.available
+                                    .map(
+                                      (route) => DropdownMenuItem(
+                                        value: route.method,
+                                        child: Text(
+                                          '${copy.t(route.method)} · ${money(route.shippingCents!)} · ${route.minDays}–${route.maxDays} ${copy.t('days')}',
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: _saving
+                                    ? null
+                                    : (value) =>
+                                          setState(() => _delivery = value),
+                              ),
                             const SizedBox(height: 24),
-                            ...model.bag.entries.map(
-                              (entry) => Padding(
+                            ...model.bag.entries.map((entry) {
+                              final sku = model.sku(entry.key);
+                              final label = sku == null
+                                  ? copy.t('productUnavailable')
+                                  : '${sku.name}${sku.variantLabel.isEmpty ? '' : ' · ${sku.variantLabel}'}';
+                              return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Text(
-                                  '${model.product(entry.key)!.name} × ${entry.value} · ${money(model.product(entry.key)!.priceCents * entry.value)}',
+                                  '$label × ${entry.value}${sku == null ? '' : ' · ${money(sku.priceCents * entry.value)}'}',
                                 ),
-                              ),
-                            ),
+                              );
+                            }),
                             const Divider(height: 32),
                             Text(
-                              '${copy.t('subtotal')}: ${money(model.subtotal)}',
+                              '${copy.t('subtotal')}: ${quotes == null ? '—' : money(quotes.subtotalCents)}',
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '${copy.t('shipping')}: ${money(_shipping(model.subtotal))}',
+                              '${copy.t('shipping')}: ${quote == null ? '—' : money(quote.shippingCents!)}',
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -259,12 +433,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              '${copy.t('total')}: ${money(model.subtotal + _shipping(model.subtotal))}',
+                              '${copy.t('total')}: ${quote == null || quotes == null ? '—' : money(quotes.subtotalCents + quote.shippingCents!)}',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 24),
                             FilledButton(
-                              onPressed: _saving ? null : () => _save(model),
+                              key: const ValueKey('checkout-save'),
+                              onPressed: _saving || quote == null
+                                  ? null
+                                  : () => _save(model),
                               child: _saving
                                   ? const SizedBox(
                                       width: 24,

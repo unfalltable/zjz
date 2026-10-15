@@ -21,7 +21,8 @@ void main() {
       await model.initialize();
       await tester.pumpWidget(MiovaApp(model: model));
       await tester.pumpAndSettle();
-      expect(find.text('MIOVA 妙物'), findsOneWidget);
+      expect(find.text('沃米'), findsOneWidget);
+      expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).title, '沃米');
       await tester.scrollUntilVisible(
         find.text('Nova Orb Speaker'),
         200,
@@ -68,6 +69,8 @@ void main() {
       model.setLocale('zh');
       await tester.pumpWidget(MiovaApp(model: model));
       await tester.pumpAndSettle();
+      expect(find.text('沃米'), findsOneWidget);
+      expect(find.text('生活有趣，沃米相伴。'), findsOneWidget);
       await tester.ensureVisible(find.text('加入购物袋'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

@@ -18,10 +18,18 @@ export type StoreProduct = {
   compareAtCents?: number | null;
   inventoryReserved?: false;
   shippingWeightGrams?: number;
+  images?: string[];
+  listingId?: string;
+  variantAttributes?: Record<string, string>;
+  variants?: StoreProduct[];
+  priceRangeCents?: { min: number; max: number };
+  variantInventory?: number;
   badge: Record<StoreLocale, string>;
   description: Record<StoreLocale, string>;
   detail: Record<StoreLocale, string>;
 };
+
+export const MAX_BAG_LINES = 20;
 
 export const CART_STORAGE_KEY = "miova_cart_v1";
 export const FAVORITES_STORAGE_KEY = "miova_favorites_v1";

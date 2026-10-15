@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { insertProduct } from "../../tests/commerce-db-fixture.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const directory = mkdtempSync(path.join(tmpdir(), "miova-build-smoke-"));
@@ -81,7 +82,68 @@ try {
   const auditedPage = await fetch(`${admin}/ops`, { headers: operatorHeaders });
   assert.equal(auditedPage.status, 200, "An actual audit event must not break the RSC workspace.");
   assert.equal((await auditedPage.text()).includes("isolated-audit"), true);
-  console.info("Node production bundles verified: persistent empty catalog, payments disabled, forged Web identity blocked, private admin authenticated.");
+  // Exercise real product SSR, child deep links and reviewed order totals in the
+  // isolated production process. The fixture never touches a merchant database.
+  const productsDatabase = new DatabaseSync(path.join(directory, "commerce.sqlite"));
+  try {
+    const localized = { en: "Variant verification", zh: "规格验证", es: "Verificación de opciones" };
+    const metadata = JSON.stringify({ color: "blue", badge: localized, description: localized, detail: localized });
+    for (const [id, sku, cents, stock, color, group] of [
+      ["variant-root", "VERIFY-BLUE", 2000, 0, "Blue", null],
+      ["variant-red", "VERIFY-RED", 3000, 2, "Red", "variant-root"],
+      ["variant-green", "VERIFY-GREEN", 4000, 0, "Green", "variant-root"],
+    ]) insertProduct(productsDatabase, {
+      id, owner_id: "isolated-build-test", sku, storefront_id: id,
+      name: "Variant verification", category: "home", image: "/products/kumo.webp",
+      price_cents: cents, stock, reserved: 0, status: "active", metadata_json: metadata,
+      product_group_id: group, variant_attributes_json: JSON.stringify({ Color: color }),
+      variant_signature: JSON.stringify([["Color", color]]),
+    });
+  } finally { productsDatabase.close(); }
+  const grouped = await (await fetch(`${web}/api/v1/catalog`)).json();
+  assert.equal(grouped.products.length, 1);
+  assert.equal(grouped.products[0].variants.length, 3);
+  for (const q of ["VERIFY-RED", "Color: Red", "verification red", "ＶＥＲＩＦＹ－ＲＥＤ"]) {
+    const response = await fetch(`${web}/api/v1/catalog?${new URLSearchParams({ q })}`);
+    assert.equal(response.status, 200, q);
+    const searched = await response.json();
+    assert.deepEqual(searched.products.map((item) => item.id), ["variant-root"], q);
+    assert.equal(searched.products[0].variants.length, 3);
+    assert.deepEqual(searched.pageInfo, { hasMore: false, nextCursor: null });
+  }
+  assert.deepEqual((await (await fetch(`${web}/api/v1/catalog?q=missing-option`)).json()).products, []);
+  const rootPage = await fetch(`${web}/product/variant-root`);
+  assert.equal(rootPage.status, 200);
+  assert.match(await rootPage.text(), /value="variant-red"[^>]*selected/, "Root details default to a buyable SKU.");
+  const soldPage = await fetch(`${web}/product/variant-green`);
+  assert.equal(soldPage.status, 200);
+  const soldMarkup = await soldPage.text();
+  assert.match(soldMarkup, /value="variant-green"[^>]*selected/, "A sold-out child deep link must not switch SKU.");
+  assert.match(soldMarkup, /\/product\/variant-root/, "Child metadata retains the canonical listing.");
+  const draft = {
+    idempotencyKey: crypto.randomUUID(), email: "variant@example.test", firstName: "Test", lastName: "Buyer",
+    address: "1 Test Street", apartment: "", city: "Test City", region: "CA", postal: "12345",
+    phone: "+15555550100", destination: "US", deliveryMethod: "standard",
+    marketingOptIn: false, website: "", items: [{ id: "variant-red", quantity: 1 }],
+    expectedSubtotalCents: 3000, expectedShippingCents: 890,
+  };
+  const postDraft = (input) => fetch(`${web}/api/v1/orders`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  });
+  const saved = await postDraft(draft);
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const receipt = await saved.json();
+  assert.equal(receipt.totalCents, 3890);
+  const changedDatabase = new DatabaseSync(path.join(directory, "commerce.sqlite"));
+  try { changedDatabase.prepare("UPDATE products SET price_cents = 3500 WHERE sku = 'VERIFY-RED'").run(); }
+  finally { changedDatabase.close(); }
+  const changed = await postDraft({ ...draft, idempotencyKey: crypto.randomUUID() });
+  assert.equal(changed.status, 409);
+  assert.equal((await changed.json()).code, "price_quote_changed");
+  const replayed = await (await postDraft(draft)).json();
+  assert.equal(replayed.orderNumber, receipt.orderNumber);
+  assert.equal(replayed.totalCents, 3890);
+  console.info("Node production bundles verified: persistent empty catalog, payments disabled, forged Web identity blocked, private admin authenticated, Unicode/SKU variant search, variant SSR/deep links and reviewed idempotent order totals.");
 } finally {
   for (const child of children) {
     if (child.exitCode !== null) continue;

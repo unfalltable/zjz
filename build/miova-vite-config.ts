@@ -21,6 +21,7 @@ export async function createMiovaConfig(surface: "web" | "admin"): Promise<UserC
       resolve: { tsconfigPaths: false, alias: {
         "cloudflare:workers": path.join(repositoryRoot, "backend/api/runtime/selfhost/env.mjs"),
         "@backend/auth": path.join(repositoryRoot, "backend/api/runtime/selfhost/auth.ts"),
+        "@backend/media-storage": path.join(repositoryRoot, "backend/api/runtime/selfhost/media-storage.mjs"),
         "@backend": path.join(repositoryRoot, "backend/api"),
         "@shared": path.join(repositoryRoot, "shared"),
         "@admin": path.join(repositoryRoot, "backend/backend_web"),
@@ -36,6 +37,7 @@ export async function createMiovaConfig(surface: "web" | "admin"): Promise<UserC
         // disabled too, so a public Node build cannot silently use Sites auth.
         config: () => ({ resolve: { tsconfigPaths: false, alias: [
           { find: /^@backend\/auth$/, replacement: path.join(repositoryRoot, "backend/api/runtime/selfhost/auth.ts") },
+          { find: /^@backend\/media-storage$/, replacement: path.join(repositoryRoot, "backend/api/runtime/selfhost/media-storage.mjs") },
           { find: /^cloudflare:workers$/, replacement: path.join(repositoryRoot, "backend/api/runtime/selfhost/env.mjs") },
         ] } }),
       }],

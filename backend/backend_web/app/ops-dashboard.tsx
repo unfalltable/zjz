@@ -38,6 +38,8 @@ import {
 } from "./actions";
 import { initialOpsActionState } from "./action-state";
 import { CommercialConsole } from "./commercial-console";
+import { ProductImages } from "./product-images";
+import { VariantManager } from "./variant-manager";
 
 type Locale = "en" | "zh";
 let fallbackOpsLocale: Locale = "en";
@@ -304,16 +306,19 @@ function CatalogTools({ editable, locale }: { editable: boolean; locale: Locale 
 }
 
 function ProductEditor({ product, editable, locale }: { product: OpsProduct; editable: boolean; locale: Locale }) {
-  return <details className="ops-product-details"><summary>{locale === "zh" ? "编辑商品" : "Edit product"}</summary>
+  const [open, setOpen] = useState(false);
+  return <details className="ops-product-details" onToggle={event => setOpen(event.currentTarget.open)}><summary>{locale === "zh" ? "编辑商品" : "Edit product"}</summary>
     <ProductForm key={`${product.sku}-${product.version}-${product.updatedAt}`} product={product} editable={editable} locale={locale} />
+    {open && !product.isVariant && <VariantManager rootSku={product.sku} rootVersion={product.version} editable={editable} locale={locale} />}
   </details>;
 }
 
 function ProductForm({ product, editable, locale }: { product?: OpsProduct; editable: boolean; locale: Locale }) {
   const [state, action, pending] = useActionState(saveProductAction, initialOpsActionState);
+  const [uploading, setUploading] = useState(false);
   useActionToast(state);
   const zh = locale === "zh";
-  return <form action={action} className="ops-product-form">
+  return <form action={action} className="ops-product-form" onSubmit={event => { if (uploading) event.preventDefault(); }}>
     <input type="hidden" name="mode" value={product ? "edit" : "create"} />
     {product?.version !== undefined && <input type="hidden" name="expectedVersion" value={product.version} />}
     <fieldset disabled={!editable || pending}>
@@ -324,7 +329,7 @@ function ProductForm({ product, editable, locale }: { product?: OpsProduct; edit
       <label>{zh ? "售价（USD）" : "Price (USD)"}<Input name="price" inputMode="decimal" defaultValue={product?.priceCents ? (product.priceCents / 100).toFixed(2) : ""} required pattern="[0-9]{1,6}(\.[0-9]{1,2})?" placeholder="19.90" /></label>
       <label>{zh ? "划线价（可选，需大于售价）" : "Compare-at (optional, above price)"}<Input name="compareAt" inputMode="decimal" defaultValue={product?.compareAtCents ? (product.compareAtCents / 100).toFixed(2) : ""} pattern="[0-9]{1,6}(\.[0-9]{1,2})?" /></label>
       <label>{zh ? "分类" : "Category"}<NativeSelect name="category" defaultValue={product?.category ?? "home"}><NativeSelectOption value="home">{zh ? "生活家居" : "Home & living"}</NativeSelectOption><NativeSelectOption value="tech">{zh ? "数码" : "Tech"}</NativeSelectOption><NativeSelectOption value="wear">{zh ? "服饰配件" : "Style & accessories"}</NativeSelectOption></NativeSelect></label>
-      <label>{zh ? "图片地址（HTTPS 或 /products/）" : "Image URL (HTTPS or /products/)"}<Input name="image" defaultValue={product?.image ?? ""} required maxLength={2048} placeholder="https://…/product.webp" /></label>
+      <ProductImages image={product?.image ?? ""} images={product?.metadata?.images ?? []} locale={locale} disabled={!editable || pending} onBusy={setUploading} />
       <label>{zh ? "单件物流重量（克，含包装）" : "Shipping weight per unit (grams, packed)"}<Input name="shippingWeightGrams" type="number" min={1} max={1000000} step={1} required defaultValue={(product as OpsProduct & { shippingWeightGrams?: number } | undefined)?.shippingWeightGrams ?? 500} /></label>
       <input type="hidden" name="color" value={product?.metadata?.color ?? "blue"} />
       {(["en", "zh", "es"] as const).map((language) => <div className="ops-product-copy" key={language}>
@@ -336,7 +341,7 @@ function ProductForm({ product, editable, locale }: { product?: OpsProduct; edit
       <label>{zh ? "默认履约路线" : "Default fulfillment lane"}<NativeSelect name="defaultFulfillment" defaultValue={product?.defaultFulfillment ?? "self"}>{(["marketplace", "self", "supplier"] as FulfillmentMode[]).map((mode) => <NativeSelectOption key={mode} value={mode}>{copy[locale][mode]}</NativeSelectOption>)}</NativeSelect></label>
       <label>{zh ? "售卖状态" : "Sale status"}<NativeSelect name="status" defaultValue={product?.status ?? "paused"}>{product && <NativeSelectOption value="active">{zh ? "上架" : "Active"}</NativeSelectOption>}<NativeSelectOption value="paused">{zh ? "下架" : "Paused"}</NativeSelectOption></NativeSelect></label>
       <p className="ops-field-note">{zh ? "上架前确认售价、图片、实际库存和履约能力。不会修改历史订单价格，也不会预占未付款订单库存。" : "Confirm pricing, images, physical stock and fulfillment before activation. Historical order prices are unchanged; pending drafts do not reserve stock."}</p>
-      <Button type="submit">{pending ? copy[locale].saving : copy[locale].save}</Button>
+      <Button type="submit" disabled={uploading}>{pending ? copy[locale].saving : uploading ? (zh ? "等待图片上传…" : "Waiting for images…") : copy[locale].save}</Button>
     </fieldset>
     <p className="ops-action-message" role={state.kind === "error" ? "alert" : "status"}>{state.message}</p>
   </form>;

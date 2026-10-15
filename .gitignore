@@ -74,3 +74,9 @@ app/macos/Flutter/ephemeral/
 app/linux/flutter/ephemeral/
 app/windows/flutter/ephemeral/
 web/public/app-preview/
+
+# Local verification reports
+/commerce-check.log
+/selfhost-build-check.log
+/selfhost-verify-check.log
+/lint-check-*.json

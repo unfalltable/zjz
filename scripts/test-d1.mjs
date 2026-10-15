@@ -54,7 +54,52 @@ try {
   const inventory = await db.prepare("SELECT stock, reserved FROM products WHERE sku = 'KUMO-01'").first();
   assert.equal(inventory.stock, 5);
   assert.equal(inventory.reserved, 0);
-  console.log("Isolated workerd/D1 checks passed: migrations, zero-write reads, catalog/inventory audit transactions, concurrent draft idempotency, 409 binding, unpaid fulfillment guard, snapshot retry.");
+  const variants = await import("../backend/api/db/variants.ts");
+  const root = (await variants.getProductVariants(env.STORE_OWNER_ID, "KUMO-01"))[0];
+  const variantInput = { attributes: { Color: "Blue" }, priceCents: 4990, compareAtCents: null,
+    shippingWeightGrams: 500, defaultFulfillment: "self", status: "active" };
+  assert.equal(await variants.updateProductVariant(env.STORE_OWNER_ID, "KUMO-01", root.version, variantInput), "updated");
+  const changedRoot = (await variants.getProductVariants(env.STORE_OWNER_ID, "KUMO-01"))[0];
+  assert.equal(await variants.createProductVariant(env.STORE_OWNER_ID, "KUMO-01", changedRoot.version, {
+    sku: "D1-RED", storefrontId: "d1-red", attributes: { Color: "Ｒｅｄ" }, priceCents: 2990,
+    shippingWeightGrams: 500, defaultFulfillment: "self",
+  }), "created");
+  assert.equal(await variants.updateProductVariant(env.STORE_OWNER_ID, "D1-RED", 0, {
+    ...variantInput, attributes: { Color: "Ｒｅｄ" }, priceCents: 2990,
+  }), "updated");
+  for (const q of ["D1-RED", "Color: Red", "cloud red"]) {
+    const page = await catalog.getStorefrontCatalogPage(env.STORE_OWNER_ID, { q });
+    assert.deepEqual(page.products.map((item) => item.id), ["kumo"], q);
+    assert.equal(page.products[0].variants.length, 2);
+  }
+  assert.equal(await variants.updateProductVariant(env.STORE_OWNER_ID, "D1-RED", 1, {
+    ...variantInput, attributes: { Color: "Ｒｅｄ" }, priceCents: 2990, status: "paused",
+  }), "updated");
+  assert.deepEqual((await catalog.getStorefrontCatalogPage(env.STORE_OWNER_ID, { q: "D1-RED" })).products, []);
+
+  // A searched scan can contain 101 roots; each variant query must respect D1's 100-parameter bound.
+  await db.batch(Array.from({ length: 105 }, (_, index) => {
+    const id = "d1-scan-" + String(index).padStart(3, "0");
+    return db.prepare(`INSERT INTO products (id, owner_id, sku, name, storefront_id, price_cents, category,
+      image, stock, reserved, inbound, default_fulfillment, status, version, updated_at,
+      variant_attributes_json, variant_signature)
+      VALUES (?, ?, ?, ?, ?, 1990, 'home', '/products/kumo.webp', 0, 0, 0, 'self', 'active', 0,
+        ?, '{"Color":"Blue"}', '[["Color","Blue"]]')`)
+      .bind(id, env.STORE_OWNER_ID, "SKU-" + id, "Scan root " + id, id, new Date().toISOString());
+  }));
+  await db.prepare(`INSERT INTO products (id, owner_id, sku, name, storefront_id, price_cents, category,
+    image, stock, reserved, inbound, default_fulfillment, status, version, updated_at,
+    product_group_id, variant_attributes_json, variant_signature)
+    VALUES ('d1-last-child', ?, 'D1-LAST-RED', 'Private child', 'd1-last-child', 2990, 'home',
+      '/products/kumo.webp', 0, 0, 0, 'self', 'active', 0, ?, 'd1-scan-104',
+      '{"Color":"Red"}', '[["Color","Red"]]')`).bind(env.STORE_OWNER_ID, new Date().toISOString()).run();
+  const sparse = await catalog.getStorefrontCatalogPage(env.STORE_OWNER_ID, { q: "scan red", limit: 100 });
+  assert.deepEqual(sparse.products.map((item) => item.id), ["d1-scan-104"]);
+  assert.deepEqual(sparse.pageInfo, { hasMore: false, nextCursor: null });
+  const full = await catalog.getStorefrontCatalogPage(env.STORE_OWNER_ID, { limit: 100 });
+  assert.equal(full.products.length, 100);
+  assert.equal(full.pageInfo.hasMore, true);
+  console.log("Isolated workerd/D1 checks passed: migrations, zero-write reads, catalog/inventory audit transactions, concurrent draft idempotency, 409 binding, unpaid fulfillment guard, snapshot retry, Unicode/SKU variant search and 100-parameter batch limits.");
 } finally {
   delete env.DB;
   delete env.STORE_OWNER_ID;

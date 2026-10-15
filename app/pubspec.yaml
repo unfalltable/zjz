@@ -1,5 +1,5 @@
 name: miova_app
-description: "MIOVA 妙物 multilingual cross-border shopping client."
+description: "沃米 multilingual cross-border shopping client."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

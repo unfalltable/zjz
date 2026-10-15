@@ -11,7 +11,7 @@ paths:
       parameters:
         - name: q
           in: query
-          description: Literal case-insensitive text in product name, SKU, or the chosen locale's description/detail. Unicode case matching runs on the server; this is not a fuzzy or semantic search index.
+          description: All whitespace-separated keywords must match literal text in the visible product name, parent or active option SKU, named option dimensions/values, or the chosen locale's description/detail. Unicode NFKC normalization folds width and composed accents before case matching. Matching options return one complete canonical listing with its valid active options; paused, invalid and other-store options cannot cause a match. This is not a fuzzy or semantic search index.
           schema: {type: string, maxLength: 100, default: ''}
         - name: category
           in: query
@@ -21,7 +21,7 @@ paths:
           schema: {type: string, enum: [en, zh, es], default: en}
         - name: sort
           in: query
-          description: Featured uses name ascending, not a popularity claim. Every order has a deterministic product-row ID tie-breaker.
+          description: Featured uses parent name ascending, not a popularity claim. Price sorts use the parent SKU price. Every order has a deterministic parent product-row ID tie-breaker.
           schema: {type: string, enum: [featured, price-low, price-high], default: featured}
         - name: limit
           in: query

@@ -2,7 +2,7 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { env } from "cloudflare:workers";
-import { getStorefrontProduct } from "@backend/db/catalog";
+import { getStorefrontProductDetail } from "@backend/db/catalog";
 import { ProductDetail } from "./product-detail";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ const loadProduct = cache(async (id: string) => {
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return null;
   const ownerId = (env as unknown as Record<string, string | undefined>).STORE_OWNER_ID?.trim();
   if (!ownerId) throw new Error("product_temporarily_unavailable");
-  return getStorefrontProduct(ownerId, id);
+  return getStorefrontProductDetail(ownerId, id);
 });
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return {
     title: `${product.name} — MIOVA 妙物`,
     description: product.description.en,
-    alternates: { canonical: `/product/${encodeURIComponent(product.id)}` },
+    alternates: { canonical: `/product/${encodeURIComponent(product.listingId ?? product.id)}` },
     openGraph: { title: `${product.name} — MIOVA 妙物`, description: product.description.en, type: "website" },
     twitter: { card: "summary", title: product.name, description: product.description.en },
   };

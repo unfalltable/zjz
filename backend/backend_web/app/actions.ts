@@ -8,7 +8,7 @@ import { getChatGPTUser } from "@backend/auth";
 import { addProductStock, setOrderStatus } from "@backend/db/ops";
 import { createCatalogProduct, importCatalogProducts, updateCatalogProduct } from "@backend/db/catalog";
 import { fulfillmentModes, orderStatuses } from "@shared/ops-types";
-import { isProductImage } from "@shared/assets";
+import { isProductImage, isManagedProductImage, isManagedProductImageForOwner } from "@shared/assets";
 import { isStorefrontProductId } from "@shared/product-id";
 
 import type { OpsActionState } from "./action-state";
@@ -44,7 +44,8 @@ const productSchema = z.object({
   status: z.enum(["active", "paused"]),
   defaultFulfillment: z.enum(fulfillmentModes),
   expectedVersion: z.coerce.number().int().min(0).optional(),
-  metadata: z.object({ color: z.enum(["blue", "ice", "coral"]), badge: localizedSchema, description: localizedSchema, detail: localizedSchema }),
+  metadata: z.object({ color: z.enum(["blue", "ice", "coral"]), badge: localizedSchema, description: localizedSchema, detail: localizedSchema,
+    images: z.array(z.string().refine(isProductImage)).max(8).optional() }),
   shippingWeightGrams: z.coerce.number().int().min(1).max(1000000).default(500),
 }).refine((value) => value.compareAtCents === null || value.compareAtCents > value.priceCents);
 
@@ -156,12 +157,16 @@ export async function saveProductAction(_previousState: OpsActionState, formData
       badge: Object.fromEntries(["en", "zh", "es"].map((locale) => [locale, formData.get(`badge_${locale}`) ?? ""])),
       description: Object.fromEntries(["en", "zh", "es"].map((locale) => [locale, formData.get(`description_${locale}`) ?? ""])),
       detail: Object.fromEntries(["en", "zh", "es"].map((locale) => [locale, formData.get(`detail_${locale}`) ?? ""])),
+      images: formData.has("images") ? parseImages(formData.get("images")) : undefined,
     },
     shippingWeightGrams: formData.has("shippingWeightGrams") ? formData.get("shippingWeightGrams") : undefined,
   });
   if (!parsed.success) return actionError("Check product fields: USD price above zero, compare-at above price, a unique lowercase URL ID, and an HTTPS or /products/ image.");
   const { sku, ...input } = parsed.data;
   try {
+    for (const image of [input.image, ...(input.metadata.images ?? [])]) {
+      if (isManagedProductImage(image) && !await isManagedProductImageForOwner(image, user.userId)) return actionError("This uploaded image does not belong to this store.");
+    }
     if (formData.get("mode") === "create") {
       const result = await createCatalogProduct(user.userId, { sku, ...input });
       if (result === "exists") return actionError("That SKU or product URL already exists. No existing product was overwritten.");
@@ -187,3 +192,7 @@ function isStoreOwner(userId: string) {
 }
 
 function maintenance() { return (env as unknown as Record<string, string | undefined>).MIOVA_MAINTENANCE === "true"; }
+
+function parseImages(value: FormDataEntryValue | null) {
+  try { return JSON.parse(String(value)); } catch { return null; }
+}

@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { z } from "zod";
+import { MAX_BAG_LINES } from "@shared/catalog";
 import { getStorefrontProduct } from "@backend/db/catalog";
 import { getShippingSettings, quoteShippingFromSettings } from "@backend/db/shipping";
 import { shippingCountries, shippingMethods, type ShippingQuotesResponse } from "@shared/shipping";
@@ -8,7 +9,7 @@ import { errorResponse, HttpError, json } from "./json";
 const requestSchema = z.object({
   country: z.enum(shippingCountries),
   items: z.array(z.object({ id: z.string().trim().min(1).max(64), quantity: z.number().int().min(1).max(10) }))
-    .min(1).max(20).refine((items) => new Set(items.map((item) => item.id)).size === items.length),
+    .min(1).max(MAX_BAG_LINES).refine((items) => new Set(items.map((item) => item.id)).size === items.length),
 });
 
 // Public, read-only quote. Client prices and package weights are never authoritative.

@@ -144,3 +144,14 @@ test("default order is the real catalogue order and price sorting is stable with
   assert.deepEqual(ids(source), ["middle-first", "high", "zero", "middle-second"]);
   assert.deepEqual(search(source, { sort: "price-low" })[1], source[0]);
 });
+
+test("group prices and deal filters use buyable variants when stock differs", () => {
+  const soldOut = priced("cheap-sold-out", 1000, { inventory: 0, compareAtCents: 2000 });
+  const available = priced("available", 10000, { inventory: 3, compareAtCents: null });
+  const group = { ...product, id: "group", variants: [soldOut, available], inventory: 0 };
+  assert.equal(productPriceCents(group), 10000);
+  assert.deepEqual(search([group], { inStockOnly: true, priceBand: "under-25" }), []);
+  assert.deepEqual(search([group], { inStockOnly: true, priceBand: "100-plus" }), [group]);
+  assert.deepEqual(search([group], { inStockOnly: true, collection: "deals" }), []);
+  assert.equal(productPriceCents({ ...group, variants: [{ ...soldOut }, { ...available, inventory: 0 }] }), 1000);
+});

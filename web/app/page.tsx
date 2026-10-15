@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "@/components/product-image";
+import { ProductVariantSelector, productOptionCopy } from "@/components/product-options";
+import { variantLabel } from "@shared/variants";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ChevronDown, Globe2, Heart, House, MapPin, Minus, PackageCheck, Plus, Search, ShieldCheck, ShoppingBag, SlidersHorizontal, Smartphone, Star, Tag, X } from "lucide-react";
@@ -13,7 +15,7 @@ import { useLiveCatalog, useStoreLocale } from "@/hooks/use-storefront";
 import { catalogWindowLimit, expandCatalogWindow } from "@/lib/catalog-window";
 import { discoverProducts, hasProductDiscount, productDiscountPercent, productPriceCents, type PriceBand, type ProductCollection, type ProductSort } from "@/lib/product-discovery";
 import { storefrontCopy } from "@/lib/storefront-copy";
-import { parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
+import { canAddShoppingBagLine, flattenCatalogProducts, listingInventory, parseShoppingBag, productQuantityLimit, readBrowserValue, reconcileShoppingBag, selectProductVariant, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
 
 type WebMCPTool = {
   name: string;
@@ -50,13 +52,16 @@ export default function Home() {
   const [bagNotice, setBagNotice] = useState<"recovered" | "bagUpdated" | "storageNotice" | null>(null);
   // Keep only an ID: quick view always reflects the latest catalogue price and stock.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const selectedProduct = products.find((product) => product.id === selectedProductId) ?? null;
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const selectedListing = products.find((product) => product.id === selectedProductId) ?? null;
+  const selectedProduct = selectedListing ? selectProductVariant(selectedListing, selectedVariantId) : null;
+  const bagProducts = useMemo(() => flattenCatalogProducts(products), [products]);
   const t = storefrontCopy[locale];
   const money = useMemo(() => new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "es" ? "es-US" : "en-US", { style: "currency", currency: "USD" }), [locale]);
-  const price = (product: (typeof products)[number]) => money.format(productPriceCents(product) / 100);
+  const price = (product: (typeof products)[number]) => `${product.variants?.length ? `${productOptionCopy[locale].from} ` : ""}${money.format(productPriceCents(product) / 100)}`;
   const comparePrice = (product: (typeof products)[number]) => money.format((product.compareAtCents ?? Math.round((product.compareAt ?? 0) * 100)) / 100);
   const cartCount = useMemo(() => Object.values(cart).reduce((sum, value) => sum + value, 0), [cart]);
-  const cartTotal = useMemo(() => products.reduce((sum, product) => sum + productPriceCents(product) * (cart[product.id] ?? 0), 0) / 100, [cart, products]);
+  const cartTotal = useMemo(() => bagProducts.reduce((sum, product) => sum + productPriceCents(product) * (cart[product.id] ?? 0), 0) / 100, [cart, bagProducts]);
   const savedCount = products.filter((product) => Object.hasOwn(favorites, product.id) && favorites[product.id] === true).length;
   const categoryCounts = categoryOrder.map((value) => products.filter((product) => value === "all" || product.category === value).length);
   const matchingProducts = useMemo(() => discoverProducts(products, { locale, category, query: search, sort: sortOrder, collection, priceBand, inStockOnly, favorites }), [locale, category, search, sortOrder, collection, priceBand, inStockOnly, favorites, products]);
@@ -71,19 +76,20 @@ export default function Home() {
   const chooseCategory = (value: StoreCategory) => { setCategory(value); setSearch(""); setCollection("all"); scrollToProducts(); };
   const chooseCollection = (value: ProductCollection) => { setCollection(value); scrollToProducts(); };
   const addToBag = useCallback((id: string) => {
-    const product = products.find((item) => item.id === id);
+    const product = bagProducts.find((item) => item.id === id);
     if (catalogLoading || catalogError || !product || (cart[id] ?? 0) >= productQuantityLimit(product)) {
       toast.error(t.limit);
       return false;
     }
+    if (!canAddShoppingBagLine(cart, id)) { toast.error(productOptionCopy[locale].bagFull); return false; }
     setCart((current) => ({ ...current, [id]: Math.min((current[id] ?? 0) + 1, productQuantityLimit(product)) }));
     toast.success(t.added);
     return true;
-  }, [cart, catalogError, catalogLoading, products, t.added, t.limit]);
+  }, [cart, catalogError, catalogLoading, bagProducts, locale, t.added, t.limit]);
   const toggleFavorite = (id: string) => setFavorites((current) => ({ ...current, [id]: !current[id] }));
   const changeQuantity = (id: string, amount: number) => {
     setCart((current) => {
-      const product = products.find((item) => item.id === id);
+      const product = bagProducts.find((item) => item.id === id);
       const next = Math.max(0, Math.min(product ? productQuantityLimit(product) : 0, (current[id] ?? 0) + amount));
       const result = { ...current, [id]: next };
       if (!next) delete result[id];
@@ -190,8 +196,8 @@ export default function Home() {
                 {bagNotice && <p className="store-bag-notice" role="status">{t[bagNotice]}</p>}
                 <div className="cart-items">
                   {!cartCount && <div className="market-bag-empty"><ShoppingBag aria-hidden="true" /><h3>{t.empty}</h3><p>{t.emptyBody}</p><Button onClick={() => { setBagOpen(false); scrollToProducts(); }}>{t.continueShopping}</Button></div>}
-                  {products.filter((product) => cart[product.id]).map((product) => (
-                    <div className="cart-line" key={product.id}><Image src={product.image} alt={product.name} width={128} height={128} /><div><strong>{product.name}</strong><span>{price(product)}</span><div className="quantity-control" aria-label={`${product.name} ${t.items}`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`− ${product.name}`}><Minus aria-hidden="true" /></button><span>{cart[product.id]}</span><button disabled={cart[product.id] >= productQuantityLimit(product)} onClick={() => changeQuantity(product.id, 1)} aria-label={`+ ${product.name}`}><Plus aria-hidden="true" /></button></div></div></div>
+                  {bagProducts.filter((product) => cart[product.id]).map((product) => (
+                    <div className="cart-line" key={product.id}><Image src={product.image} alt={product.name} width={128} height={128} /><div><strong>{product.name}</strong><small>{variantLabel(product.variantAttributes)}</small><span>{price(product)}</span><div className="quantity-control" aria-label={`${product.name} ${variantLabel(product.variantAttributes)} ${t.items}`}><button onClick={() => changeQuantity(product.id, -1)} aria-label={`− ${product.name}`}><Minus aria-hidden="true" /></button><span>{cart[product.id]}</span><button disabled={cart[product.id] >= productQuantityLimit(product)} onClick={() => changeQuantity(product.id, 1)} aria-label={`+ ${product.name}`}><Plus aria-hidden="true" /></button></div></div></div>
                   ))}
                 </div>
                 {cartCount > 0 && <SheetFooter className="cart-footer"><div className="subtotal"><span>{t.subtotal}</span><strong>{money.format(cartTotal)} <small>USD</small></strong></div><Button className="checkout-button" disabled={catalogLoading || catalogError || shoppingBagNeedsReview(cart, products)} onClick={() => router.push("/checkout")}>{t.checkout}<ArrowRight aria-hidden="true" /></Button><small className="cart-security"><ShieldCheck aria-hidden="true" />{t.secureCheckout}</small></SheetFooter>}
@@ -241,14 +247,14 @@ export default function Home() {
                 const discount = productDiscountPercent(product);
                 return <article className="store-product-card" key={product.id}>
                   <button className="store-wishlist" onClick={() => toggleFavorite(product.id)} aria-label={`${favorites[product.id] ? t.saved : t.save}: ${product.name}`} aria-pressed={Boolean(favorites[product.id])}><Heart aria-hidden="true" fill={favorites[product.id] ? "currentColor" : "none"} /></button>
-                  <button className={`store-product-media store-product-${product.color}`} onClick={() => setSelectedProductId(product.id)} aria-label={`${t.quickView}: ${product.name}`}>
+                  <button className={`store-product-media store-product-${product.color}`} onClick={() => { setSelectedProductId(product.id); setSelectedVariantId(null); }} aria-label={`${t.quickView}: ${product.name}`}>
                     {discount !== null && <span className="store-product-badge market-discount">−{discount}%</span>}
                     <Image src={product.image} alt={product.name} width={480} height={480} /><span className="store-quick-view">{t.quickView}</span>
                   </button>
-                  <div className="store-product-copy"><a href={`/product/${encodeURIComponent(product.id)}`}><h3>{product.name}</h3><p>{product.description[locale]}</p></a><div><strong>{price(product)}</strong>{hasProductDiscount(product) && <del>{comparePrice(product)}</del>}<span className="market-price-currency">USD</span></div></div>
+                  <div className="store-product-copy"><a href={`/product/${encodeURIComponent(product.id)}`}><h3>{product.name}</h3><p>{product.description[locale]}</p></a><div><strong>{price(product)}</strong>{!product.variants?.length && hasProductDiscount(product) && <del>{comparePrice(product)}</del>}<span className="market-price-currency">USD</span></div></div>
                   {product.reviews > 0 && product.rating > 0 && <div className="store-product-rating" aria-label={`${product.rating} ${t.rating}`}><Star aria-hidden="true" fill="currentColor" /><span>{product.rating}</span><span>({product.reviews})</span></div>}
-                  <p className="market-product-stock" data-available={product.inventory > 0}>{product.inventory > 0 ? t.available : t.soldOut}</p>
-                  <Button className="store-add-button" disabled={(cart[product.id] ?? 0) >= productQuantityLimit(product)} onClick={() => addToBag(product.id)} aria-label={`${t.add}: ${product.name}`}><Plus aria-hidden="true" />{!product.inventory ? t.soldOut : (cart[product.id] ?? 0) >= productQuantityLimit(product) ? t.bagLimit : t.add}</Button>
+                  <p className="market-product-stock" data-available={listingInventory(product) > 0}>{listingInventory(product) > 0 ? t.available : t.soldOut}</p>
+                  <Button className="store-add-button" disabled={product.variants?.length ? !listingInventory(product) : (cart[product.id] ?? 0) >= productQuantityLimit(product)} onClick={() => product.variants?.length ? router.push(`/product/${encodeURIComponent(product.id)}`) : addToBag(product.id)} aria-label={`${product.variants?.length ? productOptionCopy[locale].choose : t.add}: ${product.name}`}><Plus aria-hidden="true" />{product.variants?.length ? productOptionCopy[locale].choose : !product.inventory ? t.soldOut : (cart[product.id] ?? 0) >= productQuantityLimit(product) ? t.bagLimit : t.add}</Button>
                 </article>;
               })}
               {catalogLoading && <><span className="sr-only" role="status">{t.catalogLoading}</span>{Array.from({ length: 10 }, (_, index) => <div className="market-card-skeleton" key={index} aria-hidden="true"><div /><span /><span /><span /></div>)}</>}
@@ -270,8 +276,8 @@ export default function Home() {
         <SheetContent className="store-detail-sheet market-sheet" closeLabel={t.close}>{selectedProduct && <>
           <div className={`store-detail-media store-product-${selectedProduct.color}`}><Image src={selectedProduct.image} alt={selectedProduct.name} width={640} height={640} /></div>
           <SheetHeader className="store-detail-header"><SheetDescription>{t.categoryNav[categoryOrder.indexOf(selectedProduct.category)]}</SheetDescription><SheetTitle>{selectedProduct.name}</SheetTitle></SheetHeader>
-          <div className="store-detail-body"><div className="store-detail-price"><strong>{price(selectedProduct)}</strong>{hasProductDiscount(selectedProduct) && <del>{comparePrice(selectedProduct)}</del>}<small>USD</small></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote}: {selectedProduct.inventory}</span><a className="market-detail-link" href={`/product/${encodeURIComponent(selectedProduct.id)}`}>{t.productPage}<ArrowRight aria-hidden="true" /></a></div>
-          <SheetFooter className="store-detail-footer"><Button disabled={catalogLoading || catalogError || (cart[selectedProduct.id] ?? 0) >= productQuantityLimit(selectedProduct)} onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{selectedProduct.inventory ? t.add : t.soldOut}</Button><Button variant="outline" onClick={() => toggleFavorite(selectedProduct.id)}><Heart aria-hidden="true" fill={favorites[selectedProduct.id] ? "currentColor" : "none"} />{favorites[selectedProduct.id] ? t.saved : t.save}</Button></SheetFooter>
+          <div className="store-detail-body">{selectedListing && <ProductVariantSelector listing={selectedListing} selectedId={selectedProduct.id} locale={locale} onChange={setSelectedVariantId} />}<div className="store-detail-price"><strong>{price(selectedProduct)}</strong>{hasProductDiscount(selectedProduct) && <del>{comparePrice(selectedProduct)}</del>}<small>USD</small></div><p>{selectedProduct.detail[locale]}</p><span><PackageCheck aria-hidden="true" />{t.productNote}: {selectedProduct.inventory}</span><a className="market-detail-link" href={`/product/${encodeURIComponent(selectedProduct.id)}`}>{t.productPage}<ArrowRight aria-hidden="true" /></a></div>
+          <SheetFooter className="store-detail-footer"><Button disabled={catalogLoading || catalogError || (cart[selectedProduct.id] ?? 0) >= productQuantityLimit(selectedProduct)} onClick={() => addToBag(selectedProduct.id)}><ShoppingBag aria-hidden="true" />{selectedProduct.inventory ? t.add : t.soldOut}</Button><Button variant="outline" onClick={() => toggleFavorite(selectedListing!.id)}><Heart aria-hidden="true" fill={favorites[selectedListing!.id] ? "currentColor" : "none"} />{favorites[selectedListing!.id] ? t.saved : t.save}</Button></SheetFooter>
         </>}</SheetContent>
       </Sheet>
     </main>

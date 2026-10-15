@@ -6,6 +6,7 @@ import { quoteShipping } from "@backend/db/shipping";
 import { destinations } from "@shared/catalog";
 import type { FulfillmentMode } from "@shared/ops-types";
 import type { PaymentStatus } from "@backend/payments";
+import { variantLabel } from "@shared/variants";
 
 export type CreateOrderResult =
   | { ok: true; orderNumber: string; paymentStatus: PaymentStatus; routeModes: FulfillmentMode[]; totalCents: number; inventoryReserved: false }
@@ -24,6 +25,12 @@ export async function createPendingOrder(input: unknown): Promise<CreateOrderRes
     // Read accepted intent before mutable product availability. Retries keep the original snapshot.
     const existing = await findStorefrontOrderByIdempotency(ownerId, parsed.data.idempotencyKey, requestFingerprint);
     if (existing) return success(existing);
+    const rejectMutableState = async (status: 409 | 422, code: string, message: string): Promise<CreateOrderResult> => {
+      // Another same-key request may have been accepted after our first read.
+      // The lookup also checks the fingerprint, so different intent remains a conflict.
+      const accepted = await findStorefrontOrderByIdempotency(ownerId, parsed.data.idempotencyKey, requestFingerprint);
+      return accepted ? success(accepted) : failure(status, code, message);
+    };
     const lineItems = [];
     let weightGrams = 0;
     for (const requested of parsed.data.items) {
@@ -31,26 +38,32 @@ export async function createPendingOrder(input: unknown): Promise<CreateOrderRes
       // owner/storefront index, never load the entire growing catalogue to save a draft.
       const product = await getStorefrontProduct(ownerId, requested.id);
       if (!product || requested.quantity > product.inventory || !Number.isSafeInteger(product.priceCents)) {
-        return failure(422, "item_unavailable", "One item is no longer available in the requested quantity.");
+        return await rejectMutableState(422, "item_unavailable", "One item is no longer available in the requested quantity.");
       }
-      lineItems.push({ sku: product.sku, name: product.name, quantity: requested.quantity,
+      lineItems.push({ sku: product.sku, name: [product.name, variantLabel(product.variantAttributes)].filter(Boolean).join(" — "), quantity: requested.quantity,
         priceCents: product.priceCents!, fulfillmentMode: product.fulfillmentMode });
       const shippingWeight = product.shippingWeightGrams ?? 500;
       if (!Number.isSafeInteger(shippingWeight) || shippingWeight < 1 || shippingWeight > 1_000_000) {
-        return failure(422, "item_unavailable", "One item does not have a valid shipping weight.");
+        return await rejectMutableState(422, "item_unavailable", "One item does not have a valid shipping weight.");
       }
       weightGrams += shippingWeight * requested.quantity;
     }
     const subtotalCents = lineItems.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+    if (parsed.data.expectedSubtotalCents !== undefined && parsed.data.expectedSubtotalCents !== subtotalCents) {
+      return await rejectMutableState(409, "price_quote_changed", "Product prices have changed. Review an updated estimate before saving.");
+    }
     const shipping = await quoteShipping(ownerId, { country: parsed.data.destination, method: parsed.data.deliveryMethod,
       subtotalCents, weightGrams });
     if (parsed.data.shippingRevision && parsed.data.shippingRevision !== shipping.revision) {
-      return failure(409, "shipping_quote_changed", "Shipping settings have changed. Review an updated delivery quote and try again.");
+      return await rejectMutableState(409, "shipping_quote_changed", "Shipping settings have changed. Review an updated delivery quote and try again.");
     }
     if (!shipping.available || shipping.shippingCents === null) {
-      return failure(422, "shipping_unavailable", "This delivery service is not available for your destination. Choose another service.");
+      return await rejectMutableState(422, "shipping_unavailable", "This delivery service is not available for your destination. Choose another service.");
     }
     const shippingCents = shipping.shippingCents;
+    if (parsed.data.expectedShippingCents !== undefined && parsed.data.expectedShippingCents !== shippingCents) {
+      return await rejectMutableState(409, "shipping_quote_changed", "Shipping prices have changed. Review an updated quote before saving.");
+    }
     const routeModes = Array.from(new Set(lineItems.map((item) => item.fulfillmentMode)));
     const order = await createPendingStorefrontOrder({
       ownerId, idempotencyKey: parsed.data.idempotencyKey, requestFingerprint,

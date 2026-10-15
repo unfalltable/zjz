@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_BAG_LINES } from "../../../shared/catalog.ts";
 
 export const destinationCodes = ["US", "CA", "GB", "DE", "AU", "FR"] as const;
 export const deliveryMethods = ["standard", "express", "priority"] as const;
@@ -21,15 +22,18 @@ export const checkoutSchema = z.object({
   destination: z.enum(destinationCodes),
   deliveryMethod: z.enum(deliveryMethods),
   shippingRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  expectedSubtotalCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  expectedShippingCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   marketingOptIn: z.boolean(),
   website: z.string().max(0),
   items: z.array(z.object({ id: z.string().trim().min(1).max(64), quantity: z.number().int().min(1).max(10) }))
-    .min(1).max(20)
+    .min(1).max(MAX_BAG_LINES)
     .refine((items) => new Set(items.map((item) => item.id)).size === items.length, "Duplicate products are not allowed"),
-});
+}).refine((input) => (input.expectedSubtotalCents === undefined) === (input.expectedShippingCents === undefined),
+  "Reviewed subtotal and shipping must be provided together");
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 
-// Only request intent belongs in the fingerprint. Prices/inventory can change after an accepted draft.
+// Reviewed amounts belong to request intent; live prices/inventory may change after an accepted draft.
 export function canonicalCheckoutRequest(input: CheckoutInput): string {
   return JSON.stringify({
     email: input.email, firstName: input.firstName, lastName: input.lastName,
@@ -37,6 +41,9 @@ export function canonicalCheckoutRequest(input: CheckoutInput): string {
     postal: input.postal, phone: input.phone, destination: input.destination,
     deliveryMethod: input.deliveryMethod, marketingOptIn: input.marketingOptIn,
     ...(input.shippingRevision ? { shippingRevision: input.shippingRevision } : {}),
+    ...(input.expectedSubtotalCents !== undefined ? {
+      expectedSubtotalCents: input.expectedSubtotalCents, expectedShippingCents: input.expectedShippingCents,
+    } : {}),
     items: [...input.items].map(({ id, quantity }) => ({ id, quantity })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   });
 }

@@ -18,7 +18,7 @@ class Copy {
     'wear': {'en': 'Style & everyday', 'zh': '穿搭日用', 'es': 'Estilo'},
     'heading': {
       'en': 'Little things. Great finds.',
-      'zh': '生活有趣，妙物相伴。',
+      'zh': '生活有趣，沃米相伴。',
       'es': 'Pequeñas cosas. Grandes hallazgos.',
     },
     'curated': {
@@ -75,6 +75,28 @@ class Copy {
       'es': 'Este producto ya no está disponible',
     },
     'subtotal': {'en': 'Subtotal', 'zh': '商品小计', 'es': 'Subtotal'},
+    'shippingLoading': {
+      'en': 'Checking shipping options…',
+      'zh': '正在查询配送方式…',
+      'es': 'Consultando opciones de envío…',
+    },
+    'shippingUnavailable': {
+      'en': 'Shipping options could not be checked. Please try again.',
+      'zh': '暂时无法查询配送方式，请重试。',
+      'es': 'No pudimos consultar el envío. Vuelve a intentarlo.',
+    },
+    'shippingNoRoutes': {
+      'en': 'No shipping options are available for this destination.',
+      'zh': '目前没有可配送至该国家的方式。',
+      'es': 'No hay opciones de envío para este destino.',
+    },
+    'shippingChanged': {
+      'en':
+          'Your bag or destination changed. Check the updated shipping quote.',
+      'zh': '购物袋或配送国家已变化，请确认更新后的运费。',
+      'es': 'La bolsa o el destino cambió. Revisa el envío actualizado.',
+    },
+    'days': {'en': 'days', 'zh': '天', 'es': 'días'},
     'shipping': {'en': 'Shipping', 'zh': '运费', 'es': 'Envío'},
     'total': {'en': 'Total', 'zh': '总计', 'es': 'Total'},
     'taxes': {

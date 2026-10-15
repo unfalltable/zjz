@@ -11,6 +11,7 @@
 | `/srv/miova/releases/<commit>` | 不可变的源代码、依赖和生产构建 |
 | `/srv/miova/current` | 指向当前发布目录的符号链接 |
 | `/srv/miova/data/commerce.sqlite` | Web 与后台共用的持久化商城数据库 |
+| `/srv/miova/data/media` | Web 与后台共用的不可变商品 WebP 图片，独立于发布目录 |
 | `/srv/miova/backups` | root-only 的发布前原站配置/代码备份 |
 | `/srv/miova/data/backups` | `miova` 可写的 SQLite 一致性快照 |
 | `/srv/miova/acme` | 仅用于 HTTPS 证书 HTTP-01 验证 |
@@ -33,12 +34,21 @@ MIOVA_RUNTIME=node
 APP_SURFACE=web
 PORT=3100
 MIOVA_SQLITE_PATH=/srv/miova/data/commerce.sqlite
+MIOVA_MEDIA_PATH=/srv/miova/data/media
 STORE_OWNER_ID=miova-selfhost
 STOREFRONT_URL=https://150.158.141.45
 PAYMENTS_ENABLED=false
 ```
 
 后台使用相同的数据库路径、`STORE_OWNER_ID`、HTTPS 商城地址和关闭支付的配置；另设 `APP_SURFACE=admin`、`PORT=3101`，以及 `MIOVA_ADMIN_USERNAME`、`MIOVA_ADMIN_PASSWORD_SHA256`、`MIOVA_ADMIN_EMAIL`。后台的随机独立密码由服务器本地生成，不复用 SSH 密码；Nginx 验证文件与 Node 保存的 SHA-256 摘要必须对应同一个密码。
+
+图片存储目录须在启动前创建，Web 与后台配置同一个绝对路径。systemd 模板默认使用 `/srv/miova/data/media`，并通过已有的 `ReadWritePaths=/srv/miova/data` 允许持久化。首次部署由管理员在服务器执行：
+
+```sh
+sudo install -d -o miova -g miova -m 0750 /srv/miova/data/media
+```
+
+目录必须为实际目录，不能是符号链接，也不能允许组或其他用户写入；不要放进 `current` 或某个发布目录。上传成功只生成不可变图片，保存商品或规格后才修改商城展示；移除相册项不会删除文件。上传仅允许后台的同源已认证请求，支持最多 10 MiB 的 JPEG、PNG、WebP，并重新编码、移除元数据。原 Sites/Cloudflare 构建暂不提供此 Node 文件存储绑定。
 
 Node 后台验证仅接受后台服务上的已验证 Basic 凭据，不接受公网传入的 `oai-authenticated-*` 身份头。公开 Web 从不将这些头或 Basic 凭据作为管理员身份。Nginx 公网代理再次清空身份头和 Authorization，且直接拒绝 `/ops` 与原 Sites 登录回调地址。
 
@@ -48,7 +58,7 @@ Node 后台验证仅接受后台服务上的已验证 Basic 凭据，不接受�
 
 1. 先核实远端分支和其他开发者的改动，再从确定的提交生成发布目录。不要强推、覆盖未合并的工作或删除旧发布。
 2. 核实专用端口、用户、数据目录和现有 IP 虚拟主机。将旧配置按时间戳备份，保留原站代码与数据库。关闭的是旧 IP 页面路由；没有证据表明进程仅属于该旧站时，不停止共享进程。
-3. 在新发布目录运行锁定依赖安装、类型检查、商业逻辑测试、`npm run build:selfhost` 和 `npm run test:selfhost-build`。后者启动隔离数据库的真实生产包，校验 Web 拒绝伪造身份、后台接受正确独立凭据。服务器已有 Node 24 时不修改全局 Node 或其他应用依赖。
+3. 在新发布目录运行锁定依赖安装、类型检查、商业逻辑测试、`npm run build:selfhost` 和 `npm run test:selfhost-build`。后者启动隔离数据库和媒体目录的真实生产包，校验 Web 拒绝伪造身份、后台接受正确独立凭据，并验证图片上传、Web/后台读取、维护锁和重启持久化。可单独执行 `npm run test:selfhost-media` 复查图片链路。服务器已有 Node 24 时不修改全局 Node 或其他应用依赖。
 4. 升级数据库前先执行一致性快照，再执行经审查的 SQLite 迁移。迁移记录包含 SQL 摘要，已应用文件发生变化会拒绝继续；不得通过删表或删除迁移记录绕过检查。
 5. 安装此目录中的 systemd 模板，运行 `systemctl daemon-reload`。保存原 `current` 链接目标，再切到新发布，启动/重启仅 `miova-web`、`miova-admin`。
 6. 先检查本地商城目录接口，再替换已备份的 IP Nginx 配置。运行 `nginx -t` 成功后才 reload Nginx；不要重启共享 Nginx。失败时恢复原 IP 配置和原发布链接，再执行配置检查与 reload。
@@ -64,7 +74,7 @@ Node 后台验证仅接受后台服务上的已验证 Basic 凭据，不接受�
 
 定时器已提供随机延迟，所以服务使用 `--no-random-sleep-on-renew`，避免 Certbot 内部随机等待超出服务超时；手动模拟续期也可加此参数。部署配置可单独更新 `/etc/systemd/system` 后 `daemon-reload`，不改已发布应用目录；记录应用提交与配置提交，不将配置更新误当成数据库或应用重建。
 
-Nginx 访问日志格式仅记录路径，不记录查询字符串、Authorization 或请求正文；错误日志仍需受限保存，不要将其未经脱敏共享。库存、订单安全仍由应用逻辑保障，边缘限流不替代这些检查。Nginx body 限制为公开商城 `64k`、后台 `1m`，修改需同时核对应用请求限制。公网没有设置不可撤回的长时 HSTS，以便初次发布或证书配置失败时安全回退。
+Nginx 访问日志格式仅记录路径，不记录查询字符串、Authorization 或请求正文；错误日志仍需受限保存，不要将其未经脱敏共享。库存、订单安全仍由应用逻辑保障，边缘限流不替代这些检查。Nginx body 限制为公开商城 `64k`、后台一般请求 `1m`；仅精确路径 `/api/admin/media` 放宽至 `10304k`（10 MiB 文件 + 64 KiB multipart 开销），保持同一后台认证、身份头清理和超时。修改需同时核对应用请求限制。公网没有设置不可撤回的长时 HSTS，以便初次发布或证书配置失败时安全回退。
 
 ## 后台访问
 
@@ -110,5 +120,7 @@ sudo systemctl enable --now miova-backup.timer
 备份使用 `VACUUM INTO` 生成在线一致性快照，不直接复制仍在写入的 `.sqlite` 文件或分开复制 WAL。脚本使用唯一文件名、严格文件路径、`quick_check` 和磁盘同步；校验失败的文件保留为 `.failed` 供检查，不覆盖原数据库。快照包含顾客资料，须按生产数据保护。
 
 需要恢复时，先确认具体快照、实际数据库路径和恢复窗口，停止仅 `miova-web` 与 `miova-admin`。保留当前 `.sqlite`、`-wal`、`-shm` 的完整集合；验证待恢复快照，在数据库目录内准备拥有正确权限的新文件，再以受控切换替代当前数据库。不要在运行中的服务上覆盖数据库，不要将数据库回滚与代码回滚混为一谈，订单写入后的旧快照恢复会丢失新增业务数据，必须由管理员明确批准。
+
+SQLite 快照不包含商品图片。应先完成一致性数据库快照，再备份整个 `MIOVA_MEDIA_PATH` 的不可变图片，并将二者作为同一备份集合保存；当前没有自动删除图片，因此后续新增文件只会形成可恢复的超集。数据库恢复时同步核对图片集合，代码发布或回退不能删除媒体目录。媒体的异地备份和定期恢复演练仍需部署管理员配置。
 
 本地每日快照不是完整灾备：尚需配置加密异地备份、恢复演练、保留周期、磁盘空间告警、证书到期告警和故障通知。脚本不自动删除历史快照；确认异地备份可恢复后，再由管理员制定明确的清理策略。

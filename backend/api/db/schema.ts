@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex, primaryKey, foreignKey, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const orders = sqliteTable(
@@ -54,6 +54,9 @@ export const products = sqliteTable(
     category: text("category"),
     image: text("image"),
     metadataJson: text("metadata_json"),
+    productGroupId: text("product_group_id"),
+    variantAttributesJson: text("variant_attributes_json"),
+    variantSignature: text("variant_signature"),
     version: integer("version").notNull().default(0),
     stock: integer("stock").notNull().default(0),
     shippingWeightGrams: integer("shipping_weight_grams").notNull().default(500),
@@ -67,6 +70,9 @@ export const products = sqliteTable(
     uniqueIndex("idx_products_owner_sku").on(table.ownerId, table.sku),
     uniqueIndex("idx_products_owner_storefront").on(table.ownerId, table.storefrontId),
     index("idx_products_owner_status").on(table.ownerId, table.status),
+    index("idx_products_owner_group").on(table.ownerId, table.productGroupId),
+    uniqueIndex("idx_products_group_variant").on(table.ownerId, sql`coalesce(${table.productGroupId}, ${table.id})`, table.variantSignature),
+    foreignKey({ columns: [table.productGroupId], foreignColumns: [table.id] }),
   ]
 );
 
@@ -151,3 +157,67 @@ export const shippingRuleCountries = sqliteTable("shipping_rule_countries", {
 export const shippingEvents = sqliteTable("shipping_events", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), entity: text("entity").notNull(), entityId: text("entity_id").notNull(), action: text("action").notNull(), detailsJson: text("details_json").notNull(), actorId: text("actor_id").notNull(), createdAt: text("created_at").notNull(),
 }, (table) => [index("idx_shipping_events_owner").on(table.ownerId, table.createdAt)]);
+
+export const logisticsLabelDrafts = sqliteTable("logistics_label_drafts", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  orderId: text("order_id").notNull().references(() => orders.id),
+  fulfillmentMode: text("fulfillment_mode").notNull(),
+  carrierCode: text("carrier_code").notNull(),
+  linesJson: text("lines_json").notNull(),
+  inputJson: text("input_json").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  status: text("status").notNull(),
+  providerShipmentId: text("provider_shipment_id"),
+  providerTransactionId: text("provider_transaction_id"),
+  ratesJson: text("rates_json").notNull().default("[]"),
+  selectedRateId: text("selected_rate_id"),
+  amountCents: integer("amount_cents"),
+  currency: text("currency"),
+  trackingNumber: text("tracking_number"),
+  trackingCarrier: text("tracking_carrier"),
+  labelUrl: text("label_url"),
+  test: integer("test").notNull().default(1),
+  shipmentId: text("shipment_id").references(() => shipments.id),
+  errorCode: text("error_code"),
+  version: integer("version").notNull().default(0),
+  leaseToken: text("lease_token"),
+  leaseExpiresAt: text("lease_expires_at"),
+  nextAttemptAt: text("next_attempt_at"),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_logistics_labels_owner_fingerprint").on(table.ownerId, table.orderId, table.fingerprint),
+  uniqueIndex("idx_logistics_labels_owner_transaction").on(table.ownerId, table.providerTransactionId).where(sql`${table.providerTransactionId} IS NOT NULL`),
+  uniqueIndex("idx_logistics_labels_owner_shipment").on(table.ownerId, table.shipmentId).where(sql`${table.shipmentId} IS NOT NULL`),
+  index("idx_logistics_labels_owner_order").on(table.ownerId, table.orderId, table.createdAt),
+  index("idx_logistics_labels_poll").on(table.ownerId, table.status, table.nextAttemptAt),
+  check("logistics_label_fulfillment", sql`${table.fulfillmentMode} IN ('marketplace','self','supplier')`),
+  check("logistics_label_lines_json", sql`json_valid(${table.linesJson})`),
+  check("logistics_label_input_json", sql`json_valid(${table.inputJson})`),
+  check("logistics_label_rates_json", sql`json_valid(${table.ratesJson})`),
+  check("logistics_label_status", sql`${table.status} IN ('quoting','quoted','purchasing','pending','ready','error','unknown')`),
+  check("logistics_label_amount", sql`${table.amountCents} IS NULL OR ${table.amountCents} >= 0`),
+  check("logistics_label_test", sql`${table.test} IN (0,1)`),
+]);
+
+export const logisticsTrackingJobs = sqliteTable("logistics_tracking_jobs", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  shipmentId: text("shipment_id").notNull().references(() => shipments.id),
+  trackingNumber: text("tracking_number").notNull(),
+  trackingCarrier: text("tracking_carrier").notNull(),
+  providerStatus: text("provider_status"),
+  providerStatusDate: text("provider_status_date"),
+  lastCheckedAt: text("last_checked_at"),
+  nextAttemptAt: text("next_attempt_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  errorCode: text("error_code"),
+  leaseToken: text("lease_token"),
+  leaseExpiresAt: text("lease_expires_at"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_logistics_tracking_owner_shipment").on(table.ownerId, table.shipmentId),
+  index("idx_logistics_tracking_poll").on(table.ownerId, table.nextAttemptAt),
+]);

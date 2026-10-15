@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "@/components/product-image";
+import { productOptionCopy } from "@/components/product-options";
 import { useEffect, useMemo, useRef, useState, useTransition, type ComponentProps } from "react";
 import {
   ArrowLeft,
@@ -21,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   CART_STORAGE_KEY,
+  MAX_BAG_LINES,
   DESTINATION_STORAGE_KEY,
   destinations,
   type DestinationCode,
@@ -28,9 +30,10 @@ import {
 } from "@shared/catalog";
 import { useLiveCatalog, useStoreLocale } from "@/hooks/use-storefront";
 import { commerceCopy } from "@/lib/commerce-copy";
-import { clearCheckoutRetry, fetchLiveCatalog, markCheckoutAttempted, parseShoppingBag, readBrowserValue, retryKeyFor, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
+import { clearCheckoutRetry, fetchLiveCatalog, flattenCatalogProducts, markCheckoutAttempted, parseShoppingBag, readBrowserValue, retryKeyFor, scrollWithoutMotion, shoppingBagNeedsReview, writeBrowserValue } from "@/lib/storefront";
+import { variantLabel } from "@shared/variants";
 import { createPendingOrderAction, type CreateOrderResult } from "./actions";
-import { fetchShippingQuotes } from "@/lib/shipping";
+import { availableShippingMethod, fetchShippingQuotes, reviewShippingQuote } from "@/lib/shipping";
 import type { ShippingQuotesResponse } from "@shared/shipping";
 
 type CheckoutStep = 1 | 2 | 3;
@@ -62,14 +65,11 @@ const initialFields: CheckoutFields = {
 
 const deliveryOptions: Array<{
   id: DeliveryMethod;
-  title: string;
-  timing: string;
-  price: number;
   icon: typeof Truck;
 }> = [
-  { id: "standard", title: "Standard tracked", timing: "6–10 business days", price: 8.9, icon: Truck },
-  { id: "express", title: "Express", timing: "3–5 business days", price: 18.9, icon: PackageCheck },
-  { id: "priority", title: "Priority", timing: "2–3 business days", price: 32, icon: ShieldCheck },
+  { id: "standard", icon: Truck },
+  { id: "express", icon: PackageCheck },
+  { id: "priority", icon: ShieldCheck },
 ];
 
 export default function CheckoutPage() {
@@ -91,6 +91,9 @@ export default function CheckoutPage() {
   const [savedTotalCents, setSavedTotalCents] = useState(0);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [isSubmitting, startSubmit] = useTransition();
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
+  // Live refreshes may update the display, but only step 2 records shopper acceptance.
+  const [reviewedShipping, setReviewedShipping] = useState<ShippingQuotesResponse | null>(null);
   const [quoteState, setQuoteState] = useState<{ key: string; response: ShippingQuotesResponse | null; error: boolean }>({ key: "", response: null, error: false });
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const submittingRef = useRef(false);
@@ -103,14 +106,14 @@ export default function CheckoutPage() {
     const storedDestination = readBrowserValue(DESTINATION_STORAGE_KEY) as DestinationCode | null;
     setCart(restored.bag);
     setBagRecovered(restored.recovered);
-    if (storedDestination && storedDestination in destinations) setDestination(storedDestination);
+    if (storedDestination && Object.hasOwn(destinations, storedDestination)) setDestination(storedDestination);
     setHydrated(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   const cartLines = useMemo(
-    () => products.filter((product) => (cart[product.id] ?? 0) > 0),
+    () => flattenCatalogProducts(products).filter((product) => (cart[product.id] ?? 0) > 0),
     [cart, products]
   );
   const subtotal = useMemo(
@@ -125,20 +128,40 @@ export default function CheckoutPage() {
   const shipping = selectedQuote?.available && selectedQuote.shippingCents !== null ? selectedQuote.shippingCents / 100 : null;
   const total = subtotal + (shipping ?? 0);
   const shippingUnavailable = shipping === null || quoteError;
-  const shippingMessage = quoteError
+  const tooManyLines = Object.keys(cart).length > MAX_BAG_LINES;
+  const shippingMessage = tooManyLines ? productOptionCopy[locale].bagFull : quoteError
     ? ({ en: "Shipping could not be quoted. Retry before continuing.", zh: "暂时无法获取运费，请重试后继续。", es: "No se pudo calcular el envío. Reintenta antes de continuar." })[locale]
     : ({ en: "No shipping service is currently available for this destination.", zh: "该目的地目前没有可用的配送服务。", es: "No hay un servicio de envío disponible para este destino." })[locale];
+  const shippingChangedMessage = ({ en: "Shipping changed. Review the updated service and price before saving.", zh: "配送信息已变化，请重新核对配送服务和价格再保存。", es: "El envío ha cambiado. Revisa el servicio y el precio antes de guardar." })[locale];
+  const retryShipping = () => {
+    setQuoteState({ key: quoteKey, response: null, error: false });
+    setQuoteAttempt((attempt) => attempt + 1);
+  };
+  const requireShippingReview = (message: string) => {
+    setReviewedShipping(null);
+    setStep(2);
+    setSubmissionError(message);
+    window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
+  };
+  const reviewUpdatedShipping = () => {
+    requireShippingReview(shippingChangedMessage);
+    retryShipping();
+  };
+  const reviewUpdatedPrices = () => {
+    requireShippingReview(t.priceChanged);
+    reloadCatalog();
+  };
   const shippingLoadingText = ({ en: "Calculating shipping…", zh: "正在计算运费…", es: "Calculando envío…" })[locale];
   useEffect(() => {
-    if (!hydrated || catalogLoading || catalogError || !cartLines.length) return;
+    if (!hydrated || catalogLoading || catalogError || !cartLines.length || tooManyLines) return;
     const controller = new AbortController();
     fetchShippingQuotes(destination, JSON.parse(shippingItemsJson), controller.signal).then((response) => {
+      if (controller.signal.aborted) return;
       setQuoteState({ key: quoteKey, response, error: false });
-      setDeliveryMethod((current) => response.quotes.some((quote) => quote.method === current && quote.available)
-        ? current : response.quotes.find((quote) => quote.available)?.method ?? current);
+      setDeliveryMethod((current) => availableShippingMethod(response, current));
     }).catch(() => { if (!controller.signal.aborted) setQuoteState({ key: quoteKey, response: null, error: true }); });
     return () => controller.abort();
-  }, [hydrated, catalogLoading, catalogError, destination, shippingItemsJson, quoteKey, cartLines.length]);
+  }, [hydrated, catalogLoading, catalogError, destination, shippingItemsJson, quoteKey, cartLines.length, tooManyLines, quoteAttempt]);
   const progress = step === 1 ? 34 : step === 2 ? 67 : 100;
   const invalidBag = shoppingBagNeedsReview(cart, products);
 
@@ -189,6 +212,7 @@ export default function CheckoutPage() {
     if (catalogLoading || catalogError || invalidBag || !cartLines.length || shippingUnavailable) return;
     if (!validateCurrentStep()) return;
     if (step < 3) {
+      if (step === 2) setReviewedShipping(quoteResponse);
       setStep((step + 1) as CheckoutStep);
       scrollWithoutMotion();
       return;
@@ -219,7 +243,11 @@ export default function CheckoutPage() {
         if (result.ok) acceptReceipt(result);
         else {
           setSubmissionError(t.saveError);
-          if (result.status !== 503) setNeedsConfirmation(false);
+          if (result.status !== 503) {
+            setNeedsConfirmation(false);
+            if (result.code === "shipping_quote_changed" || result.code === "shipping_unavailable") reviewUpdatedShipping();
+            else if (result.code === "price_quote_changed") reviewUpdatedPrices();
+          }
           window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
         }
       } catch { setSubmissionError(t.unknownResult); }
@@ -242,24 +270,29 @@ export default function CheckoutPage() {
           window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
           return;
         }
-        const currentById = new Map(currentProducts.map((product) => [product.id, product]));
+        const currentById = new Map(flattenCatalogProducts(currentProducts).map((product) => [product.id, product]));
         if (cartLines.some((product) => currentById.get(product.id)?.price !== product.price)) {
-          setSubmissionError(t.priceChanged);
-          window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
+          requireShippingReview(t.priceChanged);
           return;
         }
         const latestQuote = await fetchShippingQuotes(destination, JSON.parse(shippingItemsJson));
-        if (latestQuote.revision !== quoteResponse?.revision ||
-          latestQuote.quotes.find((quote) => quote.method === deliveryMethod)?.shippingCents !== selectedQuote?.shippingCents) {
+        const shippingReview = reviewShippingQuote(latestQuote, reviewedShipping, deliveryMethod, Math.round(subtotal * 100));
+        if (shippingReview.status === "price_changed") {
+          reviewUpdatedPrices();
+          return;
+        }
+        if (shippingReview.status === "shipping_changed") {
           setQuoteState({ key: quoteKey, response: latestQuote, error: false });
-          setStep(2);
-          setSubmissionError(({ en: "Shipping changed. Review the updated service and price before saving.", zh: "运费已变化，请重新核对配送服务和价格再保存。", es: "El envío ha cambiado. Revisa el servicio y el precio antes de guardar." })[locale]);
+          setDeliveryMethod((current) => availableShippingMethod(latestQuote, current));
+          requireShippingReview(shippingChangedMessage);
           return;
         }
         const input = {
           ...Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, name === "email" ? value.trim().toLowerCase() : value.trim()])),
           destination, deliveryMethod, marketingOptIn: marketing, website: "",
           shippingRevision: latestQuote.revision,
+          expectedSubtotalCents: latestQuote.subtotalCents,
+          expectedShippingCents: shippingReview.quote.shippingCents,
           items: Object.entries(cart).sort(([a], [b]) => a.localeCompare(b)).map(([id, quantity]) => ({ id, quantity })),
         };
         const idempotencyKey = await retryKeyFor(input);
@@ -270,7 +303,13 @@ export default function CheckoutPage() {
         if (!result.ok) {
           setNeedsConfirmation(result.status === 503);
           if (result.code === "idempotency_conflict") clearCheckoutRetry();
-          setSubmissionError(result.code === "shipping_quote_changed" || result.code === "shipping_unavailable" ? shippingMessage : /available|inventory|stock|quantity/i.test(result.message) ? t.stockChanged : t.saveError);
+          if (result.code === "price_quote_changed") {
+            reviewUpdatedPrices();
+          } else if (result.code === "shipping_quote_changed" || result.code === "shipping_unavailable") {
+            reviewUpdatedShipping();
+          } else {
+            setSubmissionError(/available|inventory|stock|quantity/i.test(result.message) ? t.stockChanged : t.saveError);
+          }
           window.setTimeout(() => errorSummaryRef.current?.focus(), 0);
           return;
         }
@@ -434,9 +473,9 @@ export default function CheckoutPage() {
 
         <aside className="checkout-summary" aria-labelledby="summary-title">
           <div className="summary-heading"><h2 id="summary-title">{t.summary}</h2><a href="/">{t.editBag}</a></div>
-          <div className="summary-lines">{cartLines.map((product) => <div className="summary-line" key={product.id}><div className={`summary-media store-product-${product.color}`}><Image src={product.image} alt="" width={160} height={160} /><span>{cart[product.id]}</span></div><div><strong>{product.name}</strong><small>{product.description[locale]}</small><span>{product.sku}</span></div><b>${(product.price * cart[product.id]).toFixed(2)}</b></div>)}</div>
+          <div className="summary-lines">{cartLines.map((product) => <div className="summary-line" key={product.id}><div className={`summary-media store-product-${product.color}`}><Image src={product.image} alt="" width={160} height={160} /><span>{cart[product.id]}</span></div><div><strong>{product.name}</strong><small>{variantLabel(product.variantAttributes) || product.description[locale]}</small><span>{product.sku}</span></div><b>${(product.price * cart[product.id]).toFixed(2)}</b></div>)}</div>
           <dl className="summary-totals"><div><dt>{t.subtotal}</dt><dd>${subtotal.toFixed(2)}</dd></div><div><dt>{t.shipping}</dt><dd>{shipping === null ? "—" : shipping === 0 ? t.free : `$${shipping.toFixed(2)}`}</dd></div><div><dt>{t.duties}</dt><dd>{t.notCalculated}</dd></div><div className="summary-total"><dt>{t.estimate}</dt><dd><small>USD</small>{shipping === null ? "—" : `$${total.toFixed(2)}`}</dd></div></dl>
-          {shippingUnavailable && <div role="status"><p>{!quoteResponse && !quoteError ? shippingLoadingText : shippingMessage}</p>{quoteError && <Button variant="outline" onClick={() => { setQuoteState({key:quoteKey,response:null,error:false}); fetchShippingQuotes(destination, JSON.parse(shippingItemsJson)).then((response) => setQuoteState({key:quoteKey,response,error:false})).catch(() => setQuoteState({key:quoteKey,response:null,error:true})); }}>{t.retry}</Button>}</div>}
+          {shippingUnavailable && <div role="status"><p>{!quoteResponse && !quoteError && !tooManyLines ? shippingLoadingText : shippingMessage}</p>{!tooManyLines && (quoteError || quoteResponse) && <Button variant="outline" onClick={retryShipping}>{t.retry}</Button>}</div>}
           <p>{t.dutyNote}</p>
           <div className="summary-trust"><div><LockKeyhole aria-hidden="true" /><span><strong>{t.noCharge}</strong><small>{t.noReservation}</small></span></div></div>
         </aside>

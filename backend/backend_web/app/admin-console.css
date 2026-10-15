@@ -202,3 +202,25 @@
   .admin-data-table { min-width: 0 !important; }
   .admin-detail-section { break-inside: avoid; }
 }
+
+.product-media-editor { grid-column: 1 / -1; min-width: 0; max-width: 760px; padding: 16px; border: 1px solid var(--admin-line, #d5d8e2); border-radius: 6px; background: #f8fafc; }
+.product-media-editor > label { display: grid; gap: 8px; font-weight: 600; }
+.product-media-editor input:not([type=file]) { min-width: 0; width: 100%; min-height: 44px; border: 1px solid #c2c7d4; border-radius: 4px; padding: 10px; background: white; font-weight: 400; }
+.product-media-gallery { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.product-media-thumbnail { position: relative; width: 128px; padding-bottom: 44px; }
+.product-media-thumbnail > button:first-child { display: grid; width: 128px; padding: 6px; border: 2px solid transparent; background: white; text-align: left; border-radius: 4px; }
+.product-media-thumbnail > button.selected:first-child { border-color: #3c44e8; }
+.product-media-thumbnail img { width: 112px; height: 100px; object-fit: contain; }
+.product-media-thumbnail span { padding: 6px 0 0; font-size: 12px; }
+.product-media-remove, .product-media-reorder { position: absolute; bottom: 0; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #d5d8e2; border-radius: 4px; background: white; }
+.product-media-remove { right: 0; } .product-media-reorder { left: 0; }
+.product-media-upload { padding: 12px 0; font-weight: 500 !important; }
+.product-media-upload svg { width: 20px; height: 20px; }
+.product-media-upload input { max-width: 100%; min-height: 44px; font-size: 14px; }
+.product-variants { margin-top: 20px; padding-top: 20px; border-top: 1px solid #d5d8e2; max-width: 900px; min-width: 0; }
+.product-variants h3 { margin: 0 0 12px; font-size: 18px; }
+.variant-dimension { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.product-variants .admin-data-table { min-width: 550px; }
+.product-variants .admin-data-table small { display: block; }
+.product-variants fieldset legend { padding-bottom: 12px; font-weight: 600; }
+@media (max-width: 640px) { .variant-dimension { grid-template-columns: minmax(0, 1fr); } .product-media-editor { padding: 12px; } }

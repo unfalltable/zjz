@@ -194,3 +194,134 @@ test("catalogue create/edit/publish rejects reserved URLs while permitting expli
   assert.equal((await catalog.getStorefrontProduct(owner, "repaired-url")).id, "repaired-url");
   assert.equal(database.prepare("SELECT count(*) AS count FROM catalog_events").get().count, 1);
 }));
+
+function variantGroup(database, index, overrides = {}) {
+  const root = product(database, index, {
+    name: "Ceramic cup", stock: 0, reserved: 0,
+    variant_attributes_json: JSON.stringify({ Color: "Blue", Size: "Small" }),
+    variant_signature: JSON.stringify([["Color", "Blue"], ["Size", "Small"]]),
+    ...overrides,
+  });
+  const child = product(database, index + 1000, {
+    name: "Private child name", sku: "CUP-RED-LARGE", category: "tech", image: null,
+    metadata_json: null, product_group_id: root.id, stock: 3, reserved: 1,
+    variant_attributes_json: JSON.stringify({ Color: "Red", Size: "Large" }),
+    variant_signature: JSON.stringify([["Color", "Red"], ["Size", "Large"]]),
+  });
+  return { root, child };
+}
+
+test("catalogue searches child SKU and named options but returns the complete canonical listing", async () => isolated(async (database, d1) => {
+  variantGroup(database, 1);
+  const { parseCatalogResponse } = await import("../web/lib/storefront.ts");
+  for (const q of ["CUP-RED-LARGE", "red", "Color: Red", "red large", "ceramic LARGE", "blue small"]) {
+    const page = await catalog.getStorefrontCatalogPage(owner, { q });
+    assert.deepEqual(page.products.map((item) => item.id), ["item-0001"], q);
+    assert.deepEqual(page.products[0].variants.map((item) => item.id), ["item-0001", "item-1001"], q);
+    assert.equal(page.products[0].variants[1].category, "home", "child retains the visible parent presentation");
+    assert.equal(parseCatalogResponse({ ok: true, products: page.products }).length, 1);
+    assert.deepEqual(page.pageInfo, { hasMore: false, nextCursor: null });
+  }
+  const response = await GET(new Request("https://store.example/api/v1/catalog?q=CUP-RED-LARGE"));
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).products.map((item) => item.id), ["item-0001"]);
+  assert.equal(d1.mutations(), 0);
+}));
+
+test("search never reveals paused, invalid or foreign variants and applies the parent category and status", async () => isolated(async (database, d1) => {
+  const { root } = variantGroup(database, 1);
+  for (const [index, sku, attributes, extra] of [
+    [2001, "HIDDEN-PAUSED", { Color: "PausedUnique", Size: "Large" }, { status: "paused" }],
+    [2002, "HIDDEN-INVALID", { Color: "InvalidUnique", Size: "Large" }, { image: "javascript:alert(1)" }],
+    [2003, "HIDDEN-URL", { Color: "UrlUnique", Size: "Large" }, { storefront_id: "constructor" }],
+  ]) product(database, index, {
+    sku, product_group_id: root.id, variant_attributes_json: JSON.stringify(attributes),
+    variant_signature: JSON.stringify(Object.entries(attributes)), ...extra,
+  });
+  const foreignRoot = product(database, 2, {
+    owner_id: "foreign-owner", variant_attributes_json: '{"Color":"Blue"}', variant_signature: '[["Color","Blue"]]',
+  });
+  product(database, 2004, {
+    owner_id: "foreign-owner", sku: "FOREIGN-UNIQUE", product_group_id: foreignRoot.id,
+    variant_attributes_json: '{"Color":"ForeignUnique"}', variant_signature: '[["Color","ForeignUnique"]]',
+  });
+  for (const q of ["HIDDEN-PAUSED", "PausedUnique", "HIDDEN-INVALID", "InvalidUnique", "HIDDEN-URL", "UrlUnique", "FOREIGN-UNIQUE", "ForeignUnique", "Private child name"]) {
+    assert.deepEqual((await allPages({ q })).map((item) => item.id), [], q);
+  }
+  assert.deepEqual((await allPages({ q: "CUP-RED-LARGE", category: "tech" })).map((item) => item.id), []);
+  assert.deepEqual((await allPages({ q: "CUP-RED-LARGE", category: "home" })).map((item) => item.id), ["item-0001"]);
+  database.prepare("UPDATE products SET status = 'paused' WHERE id = ?").run(root.id);
+  assert.deepEqual((await allPages({ q: "CUP-RED-LARGE" })).map((item) => item.id), []);
+  assert.equal(d1.mutations(), 0);
+}));
+
+test("variant search pages across sparse matches and preserves deterministic cursors without duplicated groups", async () => isolated(async (database, d1) => {
+  for (let index = 0; index < 112; index++) {
+    const root = product(database, index, {
+      variant_attributes_json: '{"Color":"Blue"}', variant_signature: '[["Color","Blue"]]',
+    });
+    for (let option = 0; option < 2; option++) product(database, 2000 + index * 2 + option, {
+      sku: "OPTION-" + index + "-" + option, product_group_id: root.id,
+      variant_attributes_json: JSON.stringify({ Color: index === 3 || index === 109 ? "Needle" + option : "Other" + option }),
+      variant_signature: JSON.stringify([["Color", index === 3 || index === 109 ? "Needle" + option : "Other" + option]]),
+    });
+  }
+  const first = await catalog.getStorefrontCatalogPage(owner, { q: "needle", limit: 1 });
+  assert.deepEqual(first.products.map((item) => item.id), ["item-0003"]);
+  assert.equal(first.pageInfo.hasMore, true);
+  assert.equal(first.products[0].variants.length, 3);
+  const second = await catalog.getStorefrontCatalogPage(owner, { q: "needle", limit: 1, cursor: first.pageInfo.nextCursor });
+  assert.deepEqual(second.products.map((item) => item.id), ["item-0109"]);
+  assert.deepEqual(second.pageInfo, { hasMore: false, nextCursor: null });
+  assert.deepEqual((await allPages({ q: "needle", limit: 1, sort: "price-high" })).map((item) => item.id), ["item-0109", "item-0003"]);
+  assert.equal(d1.mutations(), 0);
+}));
+
+test("server search normalizes Unicode and whitespace, treats wildcard text literally and matches all tokens", async () => isolated(async (database, d1) => {
+  const { root } = variantGroup(database, 1, { name: "Ｃｅｒａｍｉｃ   Cafe\u0301" });
+  database.prepare("UPDATE products SET variant_attributes_json = ? WHERE id = ?")
+    .run(JSON.stringify({ Color: "Ｒｅｄ", Size: "100%_Large" }), "row-1001");
+  product(database, 3, { name: "Ceramic cafe", sku: "NOT-A-CUP" });
+  for (const q of ["ceramic café", "ＣＥＲＡＭＩＣ\tcafé", "ceramic red", "100%_", "color: red", "large red café"]) {
+    assert.deepEqual((await allPages({ q })).map((item) => item.id), [root.storefront_id], q);
+  }
+  assert.deepEqual((await allPages({ q: "%x" })).map((item) => item.id), []);
+  database.prepare("UPDATE products SET name = 'Ceramic A' WHERE id = ?").run(root.id);
+  const first = await catalog.getStorefrontCatalogPage(owner, { q: "ＣＥＲＡＭＩＣ", limit: 1 });
+  assert.equal(first.pageInfo.hasMore, true);
+  const next = await catalog.getStorefrontCatalogPage(owner, { q: "ceramic", cursor: first.pageInfo.nextCursor });
+  assert.deepEqual(next.products.map((item) => item.id), ["item-0003"]);
+  assert.equal(d1.mutations(), 0);
+}));
+
+test("search and 100-listing pages stay within D1's bound-parameter limit", async () => isolated(async (database, d1) => {
+  for (let index = 0; index < 112; index++) product(database, index, {
+    variant_attributes_json: '{"Color":"Blue"}', variant_signature: '[["Color","Blue"]]',
+  });
+  const sizes = [];
+  env.DB = {
+    ...d1,
+    prepare(sql) {
+      const statement = d1.prepare(sql);
+      return {
+        ...statement,
+        bind(...values) {
+          sizes.push(values.length);
+          assert.ok(values.length <= 100, "A single D1 statement accepts at most 100 bound parameters");
+          return statement.bind(...values);
+        },
+      };
+    },
+  };
+  for (const query of [{ limit: 100 }, { limit: 100, q: "blue" }]) {
+    const first = await catalog.getStorefrontCatalogPage(owner, query);
+    assert.equal(first.products.length, 100);
+    assert.equal(first.pageInfo.hasMore, true);
+    const second = await catalog.getStorefrontCatalogPage(owner, { ...query, cursor: first.pageInfo.nextCursor });
+    assert.equal(second.products.length, 12);
+    assert.deepEqual(second.pageInfo, { hasMore: false, nextCursor: null });
+    assert.equal(new Set([...first.products, ...second.products].map((item) => item.id)).size, 112);
+  }
+  assert.equal(Math.max(...sizes), 100);
+  assert.equal(d1.mutations(), 0);
+}));

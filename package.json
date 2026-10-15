@@ -15,14 +15,16 @@
     "build:admin": "node scripts/run-framework.mjs build --surface admin",
     "build:selfhost": "node scripts/run-framework.mjs build --runtime node && node scripts/run-framework.mjs build --runtime node --surface admin",
     "start:selfhost": "node scripts/selfhost/start.mjs",
-    "test:selfhost-build": "node scripts/selfhost/verify-build.mjs && node scripts/selfhost/verify-admin-workflows.mjs",
+    "test:selfhost-build": "node scripts/selfhost/verify-build.mjs && node scripts/selfhost/verify-admin-workflows.mjs && node scripts/selfhost/verify-media-workflows.mjs && node scripts/selfhost/verify-shipping-workflows.mjs",
     "typecheck": "tsc --noEmit",
     "test:api": "node scripts/test-api.mjs",
     "test:commerce": "node --experimental-strip-types --test tests/*.test.mjs web/lib/*.test.mjs",
     "test:d1": "node --experimental-strip-types scripts/test-d1.mjs",
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "test:selfhost-media": "node scripts/selfhost/verify-media-workflows.mjs",
+    "test:selfhost-shipping": "node scripts/selfhost/verify-shipping-workflows.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -46,6 +48,7 @@
     "react-resizable-panels": "^4.12.2",
     "recharts": "^3.8.0",
     "sonner": "^2.0.8",
+    "sharp": "0.35.4",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
     "zod": "^3.25.76"

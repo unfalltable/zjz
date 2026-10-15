@@ -261,3 +261,28 @@ test("stock mutation service rejects non-positive/fractional/excessive requests 
   const events = (await ops.getOpsSnapshot(owner)).auditEvents;
   assert.ok(events.some((event) => event.entity === "inventory" && event.action === "restocked"));
 }));
+
+test("reviewed product and shipping amounts must match before any draft is written", async () => isolated(async (database) => {
+  await activateTemplate(database);
+  for (const amounts of [
+    { expectedSubtotalCents: 3000, expectedShippingCents: 890, code: "price_quote_changed" },
+    { expectedSubtotalCents: 3123, expectedShippingCents: 0, code: "shipping_quote_changed" },
+  ]) {
+    const response = await ordersHttp.POST(request(input(amounts)));
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, amounts.code);
+    assert.equal(database.prepare("SELECT count(*) AS count FROM orders").get().count, 0);
+    assert.equal(database.prepare("SELECT count(*) AS count FROM order_events").get().count, 0);
+  }
+  const draft = input({ expectedSubtotalCents: 3123, expectedShippingCents: 890 });
+  const receipt = await (await ordersHttp.POST(request(draft))).json();
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.totalCents, 4013);
+  database.prepare("UPDATE products SET price_cents = 9999, status = 'paused' WHERE sku = 'KUMO-01'").run();
+  const retry = await (await ordersHttp.POST(request(draft))).json();
+  assert.equal(retry.orderNumber, receipt.orderNumber);
+  assert.equal(retry.totalCents, 4013, "an accepted retry keeps the reviewed original amount");
+  const changed = await ordersHttp.POST(request({ ...draft, expectedSubtotalCents: 9999 }));
+  assert.equal(changed.status, 409, "the same key cannot be rebound to a changed amount");
+  assert.equal(database.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
+}));

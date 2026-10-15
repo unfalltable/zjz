@@ -60,13 +60,15 @@ class StoreModel extends ChangeNotifier {
       if (_disposed || request != _catalogRequest) return;
       catalog = latest;
       if (!catalog!.destinations.containsKey(destination)) destination = 'US';
-      final ids = catalog!.products.map((product) => product.id).toSet();
-      bag.removeWhere((id, _) => !ids.contains(id));
-      favorites.removeWhere((id) => !ids.contains(id));
-      for (final product in catalog!.products) {
-        if (bag.containsKey(product.id)) {
-          bag[product.id] = min(bag[product.id]!, min(10, product.inventory));
-        }
+      final listings = catalog!.products.map((product) => product.id).toSet();
+      final available = {
+        for (final product in catalog!.products)
+          for (final variant in product.saleVariants) variant.id: variant,
+      };
+      bag.removeWhere((id, _) => !available.containsKey(id));
+      favorites.removeWhere((id) => !listings.contains(id));
+      for (final entry in bag.entries.toList()) {
+        bag[entry.key] = min(entry.value, min(10, available[entry.key]!.inventory));
       }
       bag.removeWhere((_, quantity) => quantity <= 0);
     } catch (exception) {
@@ -84,13 +86,22 @@ class StoreModel extends ChangeNotifier {
     return null;
   }
 
+  Product? sku(String id) {
+    for (final listing in catalog?.products ?? <Product>[]) {
+      for (final variant in listing.saleVariants) {
+        if (variant.id == id) return variant;
+      }
+    }
+    return null;
+  }
+
   int get count => bag.values.fold(0, (sum, value) => sum + value);
   int get subtotal => bag.entries.fold(
     0,
-    (sum, entry) => sum + (product(entry.key)?.priceCents ?? 0) * entry.value,
+    (sum, entry) => sum + (sku(entry.key)?.priceCents ?? 0) * entry.value,
   );
   void quantity(String id, int quantity) {
-    final item = product(id);
+    final item = sku(id);
     if (item == null) return;
     final next = quantity.clamp(0, max(0, min(10, item.inventory))).toInt();
     if (next == 0) {
@@ -129,8 +140,12 @@ class StoreModel extends ChangeNotifier {
 
   Future<String> checkoutKeyFor(Map<String, dynamic> input) async {
     final fingerprint = sha256
-        .convert(utf8.encode(jsonEncode(input)))
+        .convert(utf8.encode(jsonEncode(_canonicalCheckoutIntent(input))))
         .toString();
+    final legacyFingerprint = sha256.convert(utf8.encode(jsonEncode(input))).toString();
+    if (_checkoutKey != null && _checkoutHash == legacyFingerprint) {
+      _checkoutHash = fingerprint;
+    }
     if (_checkoutHash != fingerprint || _checkoutKey == null) {
       _checkoutHash = fingerprint;
       _checkoutKey = newIdempotencyKey();
@@ -177,4 +192,33 @@ String newIdempotencyKey() {
       .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
       .join();
   return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+}
+
+Map<String, dynamic> _canonicalCheckoutIntent(Map<String, dynamic> input) {
+  final normalized = <String, dynamic>{};
+  for (final key in [
+    'email', 'firstName', 'lastName', 'address', 'apartment', 'city',
+    'region', 'postal', 'phone', 'destination', 'deliveryMethod',
+    'marketingOptIn', 'shippingRevision', 'expectedSubtotalCents',
+    'expectedShippingCents',
+  ]) {
+    if (!input.containsKey(key)) continue;
+    final value = input[key];
+    normalized[key] = value is String
+        ? (key == 'email' ? value.trim().toLowerCase() : value.trim())
+        : value;
+  }
+  final items = input['items'];
+  if (items is List) {
+    final lines = items.map((item) {
+      final line = Map<String, dynamic>.from(item as Map);
+      return <String, dynamic>{
+        'id': (line['id'] as String).trim(),
+        'quantity': line['quantity'],
+      };
+    }).toList()
+      ..sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
+    normalized['items'] = lines;
+  }
+  return normalized;
 }

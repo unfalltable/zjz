@@ -30,6 +30,11 @@ export class CatalogQueryError extends Error {
   constructor(message = "Invalid catalogue query.") { super(message); this.name = "CatalogQueryError"; }
 }
 
+/** Keep server and Web search consistent for width, composed accents and whitespace. */
+export function normalizeCatalogSearchText(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
 /** Shared validation; cursor contents are validated again against the store/query in the DB layer. */
 export function normalizeCatalogQuery(input: CatalogQuery = {}): NormalizedCatalogQuery {
   const q = input.q ?? "";
@@ -46,7 +51,7 @@ export function normalizeCatalogQuery(input: CatalogQuery = {}): NormalizedCatal
       (cursor !== null && (typeof cursor !== "string" || !cursor || cursor.length > CATALOG_MAX_CURSOR_LENGTH))) {
     throw new CatalogQueryError();
   }
-  return { q: q.trim().toLowerCase(), category, locale, sort, limit, cursor };
+  return { q: normalizeCatalogSearchText(q), category, locale, sort, limit, cursor };
 }
 
 export function catalogQueryFromSearchParams(params: URLSearchParams): NormalizedCatalogQuery {

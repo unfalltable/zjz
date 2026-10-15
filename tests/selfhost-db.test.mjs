@@ -11,7 +11,7 @@ import { env } from "../backend/api/runtime/selfhost/env.mjs";
 import { migrateSelfhostDatabase } from "../backend/api/runtime/selfhost/migrate.mjs";
 
 const sourceSql = fileURLToPath(new URL("../backend/sql/", import.meta.url));
-const tags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation", "0003_admin_operations", "0004_shipping_settings"];
+const tags = ["0000_sloppy_timeslip", "0001_silly_human_fly", "0002_commerce_foundation", "0003_admin_operations", "0004_shipping_settings", "0005_product_variants", "0006_logistics_integrations"];
 function memory(t) {
   const adapter = createSqliteD1(new DatabaseSync(":memory:"));
   t.after(() => adapter.close());

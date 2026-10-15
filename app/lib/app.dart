@@ -43,7 +43,7 @@ class _MiovaAppState extends State<MiovaApp> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.model,
     builder: (context, _) => MaterialApp.router(
-      title: 'MIOVA 妙物',
+      title: '沃米',
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
       theme: miovaTheme(Brightness.light),
