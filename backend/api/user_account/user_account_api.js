@@ -1379,12 +1379,11 @@ app.post('/api/account/captcha/image/verify', async (req, res) => {
 // 滑动验证码生成接口
 // ==============================
 
-
 app.post('/api/account/captcha/slider', async (req, res) => {
 
-
-
-
+    console.log('==============================');
+    console.log('滑动验证码生成请求');
+    console.log('==============================');
 
     try {
 
@@ -1412,128 +1411,114 @@ app.post('/api/account/captcha/slider', async (req, res) => {
         // 随机生成缺口位置
         // ==============================
 
+        // 拼图形状参数：base=基础方块，tab=凸/凹半径，画布含凸起
+        const base = 42;
+        const tab = 11;
+        const puzzleSize = base + tab * 2; // 画布(含凸起)尺寸 = 64
+
+        // 缺口位置（保证含凸起的整块落在图内）
         const puzzleX =
-            Math.floor(
-                Math.random() * 160
-            ) + 100;
-
+            Math.floor(Math.random() * (width - puzzleSize - 100)) + 90;
         const puzzleY =
-            Math.floor(
-                Math.random() * 70
-            ) + 30;
+            Math.floor(Math.random() * (height - puzzleSize - 20)) + 10;
 
-        const puzzleSize = 50;
+        // 每条边随机：1=凸 / -1=凹 / 0=平，组合出不规则形状
+        const rndEdge = () => [1, -1, 0][Math.floor(Math.random() * 3)];
+        const edges = {
+            top: rndEdge(),
+            right: rndEdge(),
+            bottom: rndEdge(),
+            left: rndEdge()
+        };
+
+        // 生成拼图路径（画布坐标，基础方块位于 (tab,tab)~(tab+base,tab+base)）。
+        // 缺口与拼图块共用同一路径，保证形状一致、能对齐。sweep=0 向外凸，=1 向内凹。
+        const buildJigsawPath = () => {
+            const o = tab, s = base, k = tab, mid = base / 2;
+            const seg = (dir, x, y) =>
+                dir === 0
+                    ? `L ${x} ${y}`
+                    : `A ${k} ${k} 0 0 ${dir > 0 ? 0 : 1} ${x} ${y}`;
+            let d = `M ${o} ${o} `;
+            // 上边 左→右
+            d += `L ${o + mid - k} ${o} ` + seg(edges.top, o + mid + k, o) +
+                ` L ${o + s} ${o} `;
+            // 右边 上→下
+            d += `L ${o + s} ${o + mid - k} ` +
+                seg(edges.right, o + s, o + mid + k) + ` L ${o + s} ${o + s} `;
+            // 下边 右→左
+            d += `L ${o + mid + k} ${o + s} ` +
+                seg(edges.bottom, o + mid - k, o + s) + ` L ${o} ${o + s} `;
+            // 左边 下→上
+            d += `L ${o} ${o + mid + k} ` +
+                seg(edges.left, o, o + mid - k) + ` Z`;
+            return d;
+        };
+        const piecePath = buildJigsawPath();
 
         // ==============================
         // 生成随机背景颜色
         // ==============================
 
-        const backgroundColors = [
-            '#d9edf7',
-            '#dff0d8',
-            '#fcf8e3',
-            '#f2dede',
-            '#e8e8e8'
+        // 多套渐变配色，随机取一套，背景更丰富、不单一
+        const gradientPalettes = [
+            ['#2b5876', '#4e4376'],
+            ['#355c7d', '#6c5b7b'],
+            ['#0f2027', '#2c5364'],
+            ['#136a8a', '#267871'],
+            ['#4568dc', '#b06ab3'],
+            ['#1d976c', '#2fa37a'],
+            ['#614385', '#516395'],
+            ['#eb5757', '#000000']
         ];
 
-        const backgroundColor =
-            backgroundColors[
-                Math.floor(
-                    Math.random() *
-                    backgroundColors.length
-                )
+        const palette =
+            gradientPalettes[
+                Math.floor(Math.random() * gradientPalettes.length)
             ];
 
+        // 随机生成若干半透明装饰圆，增加层次感（每次都不同）
+        let decorations = '';
+        for (let i = 0; i < 7; i++) {
+            const cx = Math.floor(Math.random() * width);
+            const cy = Math.floor(Math.random() * height);
+            const r = Math.floor(Math.random() * 28) + 8;
+            const op = (Math.random() * 0.12 + 0.04).toFixed(2);
+            decorations +=
+                `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff" opacity="${op}"/>`;
+        }
+
         // ==============================
-        // 背景 SVG
+        // 背景 SVG（渐变 + 装饰 + 缺口）
         // ==============================
 
         const backgroundSvg = `
-        <svg
-            width="${width}"
-            height="${height}"
-            xmlns="http://www.w3.org/2000/svg"
-        >
-
-            <rect
-                width="100%"
-                height="100%"
-                fill="${backgroundColor}"
-            />
-
-            <circle
-                cx="60"
-                cy="50"
-                r="30"
-                fill="#ffffff"
-                opacity="0.5"
-            />
-
-            <circle
-                cx="240"
-                cy="120"
-                r="45"
-                fill="#ffffff"
-                opacity="0.4"
-            />
-
-            <rect
-                x="30"
-                y="100"
-                width="100"
-                height="20"
-                fill="#ffffff"
-                opacity="0.3"
-            />
-
-            <circle
-                cx="160"
-                cy="40"
-                r="20"
-                fill="#ffffff"
-                opacity="0.3"
-            />
-
-            <text
-                x="160"
-                y="85"
-                text-anchor="middle"
-                font-size="22"
-                fill="#888888"
-            >
-                请拖动滑块完成验证
-            </text>
-
+        <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="${palette[0]}"/>
+                    <stop offset="100%" stop-color="${palette[1]}"/>
+                </linearGradient>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#bg)"/>
+            ${decorations}
+            <g transform="translate(${puzzleX},${puzzleY})">
+                <path d="${piecePath}"
+                    fill="#000000" opacity="0.4"
+                    stroke="#ffffff" stroke-opacity="0.7" stroke-width="2"/>
+            </g>
         </svg>
         `;
 
         // ==============================
-        // 生成缺口图 SVG
+        // 拼图块 SVG（浅色玻璃感，拖动对齐缺口）
         // ==============================
 
         const puzzleSvg = `
-        <svg
-            width="${puzzleSize}"
-            height="${puzzleSize}"
-            xmlns="http://www.w3.org/2000/svg"
-        >
-
-            <rect
-                width="${puzzleSize}"
-                height="${puzzleSize}"
-                rx="8"
-                fill="#ffffff"
-                stroke="#555555"
-                stroke-width="2"
-            />
-
-            <circle
-                cx="25"
-                cy="25"
-                r="8"
-                fill="#dddddd"
-            />
-
+        <svg width="${puzzleSize}" height="${puzzleSize}" xmlns="http://www.w3.org/2000/svg">
+            <path d="${piecePath}"
+                fill="#ffffff" fill-opacity="0.92"
+                stroke="#ffffff" stroke-width="2"/>
         </svg>
         `;
 
@@ -1589,9 +1574,9 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
         );
 
-
-
-
+        console.log('滑动验证码 ID:', captchaId);
+        console.log('正确 X:', puzzleX);
+        console.log('正确 Y:', puzzleY);
 
         // ==============================
         // 返回
@@ -1619,6 +1604,8 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
                 puzzle_size: puzzleSize,
 
+                puzzle_y: puzzleY,
+
                 expires_in: 5 * 60
 
             }
@@ -1627,7 +1614,7 @@ app.post('/api/account/captcha/slider', async (req, res) => {
 
     } catch (error) {
 
-
+        console.error('滑动验证码生成失败:', error);
 
         return res.status(500).json({
 
