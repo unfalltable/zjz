@@ -4765,6 +4765,58 @@ app.post('/api/account/logout', async (req, res) => {
 
 });
 
+// ==============================
+// 获取当前用户信息（需登录）
+// 返回账号信息+资料（不含密码等敏感字段），供“我的”页加载。
+// ==============================
+app.post('/api/account/me', async (req, res) => {
+
+    try {
+        const session = await getSession(req);
+        if (!session) {
+            return res.status(401).json({ success: false, message: '请先登录' });
+        }
+
+        const [rows] = await db_pool.execute(
+            `SELECT id, email, backup_email, phone, phone_country_code,
+                    nickname, avatar_url, status, country,
+                    google_sub, apple_sub, created_at, last_login_at
+             FROM users WHERE id = ? LIMIT 1`,
+            [session.user_id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: '用户不存在' });
+        }
+
+        const u = rows[0];
+
+        return res.json({
+            success: true,
+            message: 'ok',
+            data: {
+                user_id: u.id,
+                nickname: u.nickname,
+                avatar_url: u.avatar_url,
+                email: u.email,
+                backup_email: u.backup_email,
+                phone: u.phone,
+                phone_country_code: u.phone_country_code,
+                country: u.country,
+                status: u.status,
+                // 只返回“是否已绑定”，不暴露三方唯一标识
+                has_google: !!u.google_sub,
+                has_apple: !!u.apple_sub,
+                created_at: u.created_at,
+                last_login_at: u.last_login_at
+            }
+        });
+
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        return res.status(500).json({ success: false, message: '获取用户信息失败' });
+    }
+});
 
 
 
