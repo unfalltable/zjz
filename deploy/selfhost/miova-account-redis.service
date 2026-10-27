@@ -1,0 +1,39 @@
+[Unit]
+Description=Miova isolated customer account Redis
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=miova
+Group=miova
+WorkingDirectory=/srv/miova/data/account-redis
+# The protected server-local config supplies loopback bind, port 6382, ACL,
+# persistent dir, memory policy and journal logging. No secrets belong here.
+ExecStart=/usr/bin/redis-server /etc/miova/account-redis.conf --daemonize no --supervised no
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/miova
+ReadWritePaths=/srv/miova/data/account-redis
+MemoryMax=192M
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=miova-account-redis
+
+[Install]
+WantedBy=multi-user.target

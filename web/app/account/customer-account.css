@@ -1,0 +1,53 @@
+.customer-account-shell { min-height: 100dvh; color: #10143a; background: #f4f5f8; font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; line-height: 1.5; }
+.customer-account-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 80px; padding: 16px max(24px, calc((100vw - 1200px) / 2)); border-bottom: 1px solid #dde0ea; background: white; }
+.customer-account-header a, .customer-account-header label { display: inline-flex; align-items: center; gap: 10px; }
+.customer-account-header select { border: 1px solid #c5cad8; border-radius: 5px; padding: 9px; max-width: 145px; min-height: 44px; background: white; }
+.customer-account-header svg { width: 20px; height: 20px; }
+.customer-account-content { max-width: 600px; margin: 0 auto; padding: 44px 24px 64px; }
+.customer-account-panel { border: 1px solid #dde0ea; border-radius: 10px; padding: 32px; background: white; }
+.customer-account-heading { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
+.customer-account-heading > svg { flex-shrink: 0; width: 48px; height: 48px; padding: 12px; border-radius: 8px; background: #bcefff; }
+.customer-account-heading h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.25; font-weight: 750; }
+.customer-account-heading p { margin: 0; font-size: 14px; color: #535971; }
+.customer-account-tabs { display: flex; margin-bottom: 24px; border-bottom: 1px solid #dde0ea; }
+.customer-account-tabs button { flex: 1; min-height: 48px; padding: 10px; border: 0; border-bottom: 3px solid transparent; background: white; }
+.customer-account-tabs button[aria-current=page] { border-bottom-color: #3c44e8; font-weight: 700; color: #303bc0; }
+.customer-account-form fieldset { display: grid; gap: 18px; min-width: 0; border: 0; padding: 0; margin: 0; }
+.customer-account-form label, .customer-account-avatar label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; min-width: 0; }
+.customer-account-form input, .customer-account-form select { min-width: 0; width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #b8bed0; border-radius: 5px; background: white; color: #10143a; font-weight: 400; font-size: 16px; }
+.customer-password-control { display: flex; align-items: center; border: 1px solid #b8bed0; border-radius: 5px; }
+.customer-password-control input { border: 0; }
+.customer-password-control button { flex-shrink: 0; width: 46px; height: 46px; border: 0; background: white; display: grid; place-items: center; border-radius: 5px; }
+.customer-password-control svg { width: 20px; height: 20px; }
+.customer-account-primary, .customer-account-secondary { display: inline-flex; gap: 8px; align-items: center; justify-content: center; min-height: 46px; border: 1px solid #c5cad8; border-radius: 5px; padding: 10px 16px; background: white; font-size: 14px; font-weight: 650; }
+.customer-account-primary { border-color: #3c44e8; background: #3c44e8; color: white; }
+.customer-account-shell :where(button,a,input,select,summary):focus-visible { outline: 3px solid #3c44e8; outline-offset: 3px; }
+.customer-account-shell button, .customer-account-shell summary, .customer-account-shell a { cursor: pointer; }
+.customer-account-shell button:disabled { opacity: .5; cursor: not-allowed; }
+.customer-account-feedback { padding: 12px 14px; border-left: 3px solid #b78c23; background: #fff7dc; color: #59400a; font-size: 14px; overflow-wrap: anywhere; }
+.customer-account-feedback.error { border-color: #bb3242; background: #fff1f1; color: #802431; }
+.customer-account-feedback.success { border-color: #16845a; background: #eaf7f1; color: #125b3e; }
+.customer-captcha { display: grid; justify-items: start; gap: 12px; }
+.customer-captcha img { border: 1px solid #dde0ea; border-radius: 4px; object-fit: contain; background: white; }
+.customer-captcha label { width: 100%; }
+.customer-account-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 20px; font-size: 14px; }
+.customer-account-links button { min-height: 44px; padding: 5px 0; border: 0; background: transparent; color: #303bc0; display: inline-flex; gap: 8px; align-items: center; text-align: left; }
+.customer-account-links svg { width: 18px; height: 18px; }
+.customer-account-social { display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid #dde0ea; margin-top: 22px; padding-top: 20px; }
+.customer-account-social p { width: 100%; margin: 0; font-size: 13px; color: #535971; }
+.customer-account-social > a, .customer-account-provider-disabled { flex: 1; text-align: center; }
+.customer-account-provider-disabled { padding: 12px 8px; border: 1px solid #dde0ea; border-radius: 5px; font-size: 12px; color: #626980; background: #f8f9fc; }
+.customer-account-privacy { display: flex; gap: 10px; margin: 24px 0 0; font-size: 12px; color: #535971; }
+.customer-account-privacy svg { flex-shrink: 0; width: 17px; height: 17px; }
+.customer-account-facts { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: 12px; margin-bottom: 28px; font-size: 14px; }
+.customer-account-facts dt { color: #535971; } .customer-account-facts dd { margin: 0; overflow-wrap: anywhere; }
+.customer-account-avatar, .customer-account-security { margin-top: 28px; padding-top: 22px; border-top: 1px solid #dde0ea; }
+.customer-account-avatar h2 { font-size: 18px; margin: 0 0 16px; }
+.customer-account-avatar img { border-radius: 50%; object-fit: cover; margin-bottom: 14px; }
+.customer-account-avatar input { max-width: 100%; min-height: 44px; font-weight: 400; }
+.customer-account-security summary { min-height: 44px; font-weight: 700; }
+.customer-account-security form p { font-size: 13px; color: #535971; }
+.customer-account-unavailable h2 { font-size: 19px; }.customer-account-unavailable p { font-size: 14px; color: #535971; }
+.store-account-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 4px; font-size: 13px; white-space: nowrap; }
+.store-account-link svg { width: 20px; height: 20px; }
+@media (max-width: 640px) { .customer-account-header { padding: 12px 16px; gap: 10px; }.customer-account-content { padding: 24px 12px 40px; }.customer-account-panel { padding: 24px 18px; }.customer-account-heading { gap: 12px; }.customer-account-heading h1 { font-size: 25px; }.customer-account-facts { grid-template-columns: 100px minmax(0, 1fr); }.customer-account-header a { font-size: 14px; } }

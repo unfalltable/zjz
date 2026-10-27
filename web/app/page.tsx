@@ -5,6 +5,7 @@ import { ProductVariantSelector, productOptionCopy } from "@/components/product-
 import { variantLabel } from "@shared/variants";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { UserRound } from "lucide-react";
 import { ArrowRight, ChevronDown, Globe2, Heart, House, MapPin, Minus, PackageCheck, Plus, Search, ShieldCheck, ShoppingBag, SlidersHorizontal, Smartphone, Star, Tag, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -185,6 +186,7 @@ export default function Home() {
           <a className="brand store-brand" href="/" aria-label="MIOVA 妙物"><span className="brand-mark" aria-hidden="true">M</span><span>MIOVA<span className="market-brand-cn">妙物</span></span></a>
           {renderSearch()}
           <div className="store-actions">
+            <a className="store-account-link" href="/account" aria-label={locale === "zh" ? "我的账户" : locale === "es" ? "Mi cuenta" : "Account"}><UserRound aria-hidden="true" /><span>{locale === "zh" ? "我的账户" : locale === "es" ? "Mi cuenta" : "Account"}</span></a>
             <label className="store-destination"><MapPin aria-hidden="true" /><span>{t.deliverTo}</span>
               <select value={destination} onChange={(event) => setDestination(event.target.value as DestinationCode)} aria-label={t.deliverTo}>{Object.entries(destinations).map(([code, names]) => <option value={code} key={code}>{names[locale]}</option>)}</select>
             </label>

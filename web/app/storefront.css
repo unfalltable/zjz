@@ -81,6 +81,8 @@
 .market-search-mobile { display: none; }
 
 .market-shell .store-actions { gap: 8px; }
+.market-shell .store-account-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 4px; font-size: 13px; white-space: nowrap; }
+.market-shell .store-account-link svg { width: 20px; height: 20px; }
 .market-shell .store-destination { padding-inline: 4px; }
 .market-shell .store-destination > span { color: var(--market-secondary); font-size: .7rem; }
 .market-shell .store-destination select { min-width: 88px; max-width: 108px; min-height: 30px; font-size: .82rem; font-weight: 700; }
@@ -319,6 +321,8 @@
 }
 
 @media (max-width: 560px) {
+  .market-shell .store-account-link { justify-content: center; width: 44px; min-width: 44px; }
+  .market-shell .store-account-link span { display: none; }
   .market-shell .store-announcement { min-height: 34px; padding-inline: 12px; font-size: .72rem; }
   .market-shell .store-header-main { min-height: 66px; gap: 8px; padding: 10px 12px; }
   .market-shell .store-brand { gap: 6px; font-size: .86rem; }

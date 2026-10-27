@@ -10,12 +10,16 @@
 
 接口契约见仓库根目录 `shared/openapi.yaml`。公共 API 上线仍需完成限流、客户认证、库存统一和监控等验收项。
 
-## 独立账号服务
+## 统一账号服务（以新版压缩包为准）
 
-`user_account/user_account_api.js` 已同步外部开发者提供的 `1.js` 调整：MySQL 用户持久化、bcrypt 密码、Google/Apple Web/App 登录及 Redis 会话。它是独立 Node/Express 服务，不是 Worker 模块，不会自动替换 `auth.ts` 或接入商城登录。
+`account/` 是 `完整版账号登录模块.zip` 的规范化集成，也是唯一运行实现。原 `user_account/user_account_api.js` 和 `server.cjs` 现在只是转发至新实现的薄兼容入口；没有同时运行两套账号路由。历史实现可从 Git 记录恢复，远端新增的 `/api/account/me` 和退出登录功能在新版中保留。
 
-在 `backend/api` 执行 `npm ci`，将 `.env.example` 复制为 `.env` 后填写真实配置，再执行 `npm run start:account`。需要 Node 22.13+、MySQL 和 Redis；默认仅监听 `127.0.0.1:3001`。数据库须由负责账号模块的开发者检查并初始化，启动只测试连接，不自动建表、迁移或修改现有数据。独立测试：`npm run test:account`，使用模拟依赖，不连接外部服务。
+在 `backend/api` 执行 `npm ci`，复制 `.env.example` 为忽略提交的 `.env` 并配置专用账号数据库与 Redis，然后 `npm run start:account`。需要 Node 22.13+；默认只监听 **127.0.0.1:3002**，不占用服务器上其他应用的 3001 端口。测试为 `npm run test:account`，只使用模拟数据库/Redis/供应商和合成图片，不发送真实邮件或短信。
 
-同步仅做必要集成修正：移除硬编码 OAuth 密钥及敏感日志、生产环境 Cookie 使用 HTTPS、代理默认不信任、拒绝非法数字滑块坐标，补依赖及启动入口。此前代码出现过的 OAuth 密钥应在服务商侧撤销或轮换，不应继续使用。
+新模块按验证码、发送服务、账号、OAuth、头像/资料拆分。保留压缩包路由与 `{success,message,data}` 协议；新增可访问的图片验证码口令流程、OTP 用途分离与原子消费、MySQL 自增大整数 ID、手机号元数据规范化、状态/限制/会话版本复查、二次验证和事务内绑定保护。商品订单、支付及后台管理员身份仍保持独立。
 
-尚不满足生产上线条件：邮件/短信发送仍是占位函数；OAuth `state/nonce`、统一账号停用检查、验证码原子消费、并发用户 ID/邮箱/手机号唯一性及账号服务与商城的接入均需后续完成。`../sql/数据库SQL.sql` 仍保留原作者版本（含未注释自然语言及缺失主键/唯一约束），不能未经审核直接执行，更不能作为 D1 商务迁移混跑。
+SMTP、Twilio 短信、Google/Apple 为真实可配置适配器；缺少配置时能力标记为 false 并拒绝调用，不再使用“打印验证码即发送成功”的占位逻辑。OAuth Web 使用单次浏览器事务 state/nonce，固定回调和安全 Cookie。头像须先登录，图片解码后转为去元数据 WebP，持久目录通过环境变量配置。
+
+生产账号库结构见 `../sql/account/0000_account_schema.mysql.sql`；启动只读审查结构，**不执行建表/迁移/种子数据**。已有账号库必须先由运营者备份与审核，不能直接执行新库脚本。旧 `../sql/数据库SQL.sql` 不再是当前账号系统的运行规范，也不参与商务 SQLite 迁移。原压缩包带出的开发密钥应由持有人撤销/轮换，不能继续使用。
+
+接口字段、启动前置条件、兼容差异与安全边界见 [账号模块说明](account/README.md)。商城同源代理/部署接线见 [系统整合说明](../../docs/account-integration.md)。未配置真实 MySQL/Redis、发送或 OAuth 凭据时，只能声称代码和隔离验证完成，不能声称真实账号注册、验证码送达或供应商联调已经上线。

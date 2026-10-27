@@ -1,0 +1,43 @@
+[Unit]
+Description=Miova customer account API (canonical module)
+After=network.target miova-account-redis.service
+Requires=miova-account-redis.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=miova
+Group=miova
+WorkingDirectory=/srv/miova/current/backend/api
+Environment=NODE_ENV=production
+Environment=ACCOUNT_HOST=127.0.0.1
+Environment=ACCOUNT_PORT=3002
+Environment=ACCOUNT_UPLOAD_PATH=/srv/miova/data/account-avatars
+EnvironmentFile=/etc/miova/account.env
+ExecStart=/usr/bin/node /srv/miova/current/backend/api/account/api_server.cjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/miova
+ReadWritePaths=/srv/miova/data/account-avatars
+MemoryMax=512M
+TasksMax=128
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=miova-account
+
+[Install]
+WantedBy=multi-user.target
