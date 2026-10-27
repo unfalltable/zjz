@@ -21,7 +21,7 @@ Web 登录令牌只存在 `miova_customer_session` HttpOnly Cookie 中，生产�
 
 ## 运行配置与已有账号数据
 
-本轮选择沿用已有账号数据，不自动创建、重建、删除或清空真实库。账号服务启动只做结构审查，不执行 DDL。需要将旧库复制到隔离环境审查差异，保留全部用户 ID、关系和密码哈希，人工解决重复身份后再批准增量迁移；不要直接对旧库执行初始化 SQL。
+账号服务启动只做结构审查，不执行 DDL。2026-10-27 部署时，服务器没有配置商城账号库；检查发现的 `users` 表属于其他应用。本次明确建立独立空库 `miova_account`，仅在确认新建且为空的目标库执行初始化 SQL，没有导入、重建或清空其他应用账号库。若以后迁入已有账号，仍需在隔离副本审查差异、保留用户 ID、关联和密码哈希，人工解决身份冲突；不要直接对旧库执行初始化 SQL。
 
 数据库规范、只读审查和新库模板见 [账号数据库说明](../backend/sql/account/README.md)。账号库是独立 MySQL，不可把其 SQL 混进商城的 SQLite / D1 journal。`auth_version` 与新版 Redis 命名空间用于撤销旧会话；切换时旧登录态不沿用，用户需要重新登录，旧密码哈希不因此重写。
 
@@ -35,7 +35,7 @@ Web 登录令牌只存在 `miova_customer_session` HttpOnly Cookie 中，生产�
 
 服务器账号 API 使用 `/etc/miova/account.env` 覆盖为 `ACCOUNT_PORT=3202`，Web 对应设置 `ACCOUNT_API_URL=http://127.0.0.1:3202`；保留现有其他应用占用的 `3002` 端口。`NODE_ENV` 必须显式为 `production`，不能照搬开发示例中的值。
 
-独立 Redis 模板为 `deploy/selfhost/miova-account-redis.service`，账号服务通过 `Requires`／`After` 依赖它。可通过 apt 安装 Redis 可执行程序，但只启用此独立服务，不接管系统默认 Redis 或其他应用实例。由服务器本地 `/etc/miova/account-redis.conf` 设置 `bind 127.0.0.1`、端口 `6382`、受保护模式、独立 ACL／强密码、`dir /srv/miova/data/account-redis`、持久化和适合 `MemoryMax=192M` 的较低内存上限；密钥和实际配置不提交仓库。该目录使用 `miova:miova`、`0700`，配置需让进程可读（例如 `root:miova`、`0640`），且不允许进程写入。账号 `REDIS_URL` 指向此实例并包含对应凭据，不能复用其他应用的 Redis 数据。
+独立 Redis 模板为 `deploy/selfhost/miova-account-redis.service`，账号服务通过 `Requires`／`After` 依赖它。可通过 apt 安装 Redis 可执行程序，但只启用此独立服务，不接管系统默认 Redis 或其他应用实例。由服务器本地 `/etc/miova/account-redis.conf` 设置 `bind 127.0.0.1`、端口 `6382`、受保护模式、独立 ACL／强密码、`dir /srv/miova/data/account-redis`、持久化和适合 `MemoryMax=192M` 的较低内存上限；密钥和实际配置不提交仓库。数据目录使用 `miova:miova`、`0700`；配置源文件使用 `root:root`、`0600`，由 systemd 的 `LoadCredential=redis.conf:…` 读取，再以 `%d/redis.conf` 将只读的私有凭据副本交给 Redis。`%d` 是服务凭据目录，不是 `/etc/miova`；不需要放宽该目录权限或让 `miova` 加入现有 Web 服务器组。此方式要求支持凭据功能的 systemd，[Ubuntu 24.04 的 systemd 255 文档](https://manpages.ubuntu.com/manpages/noble/en/man5/systemd.unit.5.html)已定义 `%d`。更新配置源后须重启独立 Redis，再确认账号服务恢复。账号 `REDIS_URL` 指向此实例并包含对应凭据，不能复用其他应用的 Redis 数据。
 
 IP Nginx 模板只对精确路径 `/api/account/avatar` 放宽到 5 MiB 图片加 64 KiB multipart 封装，仍经过 Web 的鉴权与同源校验；其余路径维持原 64 KiB 上限。发布时先 `nginx -t` 再重载。原商城 `upgrade.sh` 只协调 Web／后台与 SQLite，账号服务启停、旧账号库备份及失败回退需要在此次切换中单独协调，不能将商城快照当作账号 MySQL 备份。
 
@@ -65,4 +65,4 @@ npm run test:selfhost-build
 
 新版后端测试使用注入式 MySQL／Redis 和本机 HTTP；网关单测不联网，生产 smoke 使用新建临时 SQLite 和明确的内存上游 fixture，不代表真实 MySQL、SMTP、短信或 OAuth 服务商已经联调。测试不会创建真实账号、发送邮件短信或求解生产验证码。
 
-本轮不自动连接或修改未知生产账号库；未完成真实配置和旧库兼容审查前，不应宣称账号服务已上线。原包中的密钥字符串应由持有人在服务商侧撤销／轮换，不能复制回新配置。
+2026-10-27 已完成独立账号服务、真实 MySQL 结构审查、Redis 和公网同源代理部署，记录见 [发布验收](account-release-20261027.md)。这不代表真实邮件／短信投递、OAuth 或已有账号迁入已经验收；相应凭据仍未配置，相关功能保持不可用。原包中的密钥字符串应由持有人在服务商侧撤销／轮换，不能复制回新配置。

@@ -11,7 +11,9 @@ Group=miova
 WorkingDirectory=/srv/miova/data/account-redis
 # The protected server-local config supplies loopback bind, port 6382, ACL,
 # persistent dir, memory policy and journal logging. No secrets belong here.
-ExecStart=/usr/bin/redis-server /etc/miova/account-redis.conf --daemonize no --supervised no
+# PID 1 reads the root-only source; the service reads its private credential copy.
+LoadCredential=redis.conf:/etc/miova/account-redis.conf
+ExecStart=/usr/bin/redis-server %d/redis.conf --daemonize no --supervised no
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
